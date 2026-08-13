@@ -74,13 +74,16 @@ def generate_launch_description():
                 '/cmd_vel@geometry_msgs/msg/Twist]ignition.msgs.Twist',
                 '/odom@nav_msgs/msg/Odometry[ignition.msgs.Odometry',
                 '/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock',
-                '/model/tortoisebot/tf@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V',
+                # NOTE: DiffDrive's odom->base_link TF is intentionally NOT bridged.
+                # Fortress's DiffDrive ignores <publish_tf>false</publish_tf>, so
+                # bridging it here made it compete with ekf_filter_node for the same
+                # transform. The EKF (odom + IMU) is the single authority.
                 gz_scan_topic + '@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+                '/imu@sensor_msgs/msg/Imu[ignition.msgs.IMU',
                 '/camera/image_raw@sensor_msgs/msg/Image[ignition.msgs.Image',
                 '/camera/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo',
             ],
             remappings=[
-                ('/model/tortoisebot/tf', '/tf'),
                 (gz_scan_topic, '/scan'),
             ],
             parameters=[{
@@ -134,6 +137,19 @@ def generate_launch_description():
                 ],
             )
         ]),
+
+        # Fills in the covariances ignition.msgs.IMU and ignition.msgs.Odometry
+        # have no fields for, republishing onto /imu_with_covariance and
+        # /odom_with_covariance for the EKF. The bridge's own /imu and /odom are
+        # left alone -- nav2, cartographer and the velocity smoother read those
+        # and ignore covariance entirely.
+        Node(
+            package='tortoisebot_gazebo',
+            executable='sim_covariance_relay.py',
+            name='sim_covariance_relay',
+            output='screen',
+            parameters=[{'use_sim_time': True}],
+        ),
 
         TimerAction(period=4.0, actions=[
             Node(

@@ -21,7 +21,10 @@ options = {
   map_builder = MAP_BUILDER,
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
-  tracking_frame = "base_link",
+  -- Must be imu_link (not base_link) whenever use_imu_data = true: Cartographer
+  -- asserts the IMU frame is colocated with tracking_frame (translation < 1e-5),
+  -- and imu_link sits 0.11 m above base_link.
+  tracking_frame = "imu_link",
   published_frame = "odom",
   odom_frame = "odom",
   provide_odom_frame = false,
@@ -50,7 +53,7 @@ TRAJECTORY_BUILDER_2D.min_range = 0.2
 TRAJECTORY_BUILDER_2D.max_range = 12.0
 TRAJECTORY_BUILDER_2D.missing_data_ray_length = 12.5
 
-TRAJECTORY_BUILDER_2D.use_imu_data = false
+TRAJECTORY_BUILDER_2D.use_imu_data = true
 
 TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = true
 TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.10

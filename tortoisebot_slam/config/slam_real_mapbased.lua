@@ -19,7 +19,10 @@ options = {
   map_builder = MAP_BUILDER,
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "odom",
-  tracking_frame = "base_link",
+  -- Must be imu_link (not base_link) whenever use_imu_data = true: Cartographer
+  -- asserts the IMU frame is colocated with tracking_frame (translation < 1e-5),
+  -- and imu_link sits 0.11 m above base_link.
+  tracking_frame = "imu_link",
   published_frame = "base_link",
   odom_frame = "odom",
   provide_odom_frame = false,
@@ -47,7 +50,11 @@ MAP_BUILDER.use_trajectory_builder_2d = true
 TRAJECTORY_BUILDER_2D.min_range = 0.05
 TRAJECTORY_BUILDER_2D.max_range = 8.
 TRAJECTORY_BUILDER_2D.missing_data_ray_length = 8.5
-TRAJECTORY_BUILDER_2D.use_imu_data = false
+-- This config is the robot's scan-matching odometer (map_frame = odom,
+-- provide_odom_frame = false), so it publishes odom->base_link and AMCL supplies
+-- map->odom. With no wheel encoders on the robot the IMU is the only thing that
+-- constrains rotation between scans.
+TRAJECTORY_BUILDER_2D.use_imu_data = true
 TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = true
 TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.1
 TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.translation_delta_cost_weight = 10.

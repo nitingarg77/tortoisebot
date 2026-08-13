@@ -1,91 +1,170 @@
 #!/usr/bin/env python3
+"""BNO055 IMU publisher for the TortoiseBot.
+
+Publishes sensor_msgs/Imu on /imu in the imu_link frame with covariances
+filled in. Consumers are cartographer_node (which remaps imu:=/imu) and, when
+enabled, robot_localization's ekf_filter_node.
+"""
+
+import math
+
+import board
+import adafruit_bno055
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Header
-from geometry_msgs.msg import Quaternion, Vector3
-import math
-import board
-import adafruit_bno055
+
 
 class ImuPublisher(Node):
+
     def __init__(self):
         super().__init__('imu_publisher')
 
-        # Initialize the publisher
-        self.publisher_ = self.create_publisher(Imu, '/imu/data', 10)
+        # frame_id must name a link that actually exists in TF.
+        # tortoisebotreal.xacro declares imu_link at (0, 0, 0.11) on base_link;
+        # there is no frame called 'imu', and both cartographer and the EKF drop
+        # every message whose frame they cannot look up.
+        self.frame_id = self.declare_parameter('frame_id', 'imu_link').value
 
-        # Initialize the timer for periodic publishing (10 Hz)
-        self.timer = self.create_timer(0.1, self.publish_imu_data)
+        # 50 Hz to match the Ignition imu_sensor in sim. The BNO055 fusion
+        # output tops out near 100 Hz and each cycle is three short I2C reads,
+        # so this is well inside the sensor's and the bus's budget. Drop it if
+        # the Pi's I2C bus turns out to be the bottleneck.
+        rate_hz = float(self.declare_parameter('rate_hz', 50.0).value)
 
-        # Initialize the sensor
+        # sensor_msgs/Imu covariances are row-major 3x3. Publishing [-1.0] * 9
+        # is the ROS convention for "this quantity is not measured", which makes
+        # robot_localization refuse the field outright -- so the old node's
+        # orientation was unusable no matter what else was fixed.
+        # These are 1-sigma values for a calibrated BNO055 in NDOF mode. Yaw is
+        # the loosest because indoor magnetic disturbance, not sensor noise,
+        # dominates heading error near the motors.
+        orient_sigma = self.declare_parameter(
+            'orientation_stddev_rpy', [0.05, 0.05, 0.10]).value      # rad
+        gyro_sigma = float(self.declare_parameter(
+            'angular_velocity_stddev', 0.01).value)                  # rad/s
+        accel_sigma = float(self.declare_parameter(
+            'linear_acceleration_stddev', 0.20).value)               # m/s^2
+
+        # Raw BNO055 calibration offset registers, captured from this unit.
+        # Units are register LSBs -- accel 1/100 m/s^2, gyro 1/16 deg/s,
+        # mag 1/16 uT -- which is what the offset registers expect. They are
+        # written to the sensor at startup, not subtracted in software; see
+        # _apply_stored_offsets.
+        offsets_accel = self.declare_parameter(
+            'offsets_accelerometer', [-59, -2, -22]).value
+        offsets_gyro = self.declare_parameter(
+            'offsets_gyroscope', [-2, -2, 1]).value
+        offsets_mag = self.declare_parameter(
+            'offsets_magnetometer', [53, -130, -477]).value
+
+        self.orientation_covariance = self._diag(
+            [float(s) ** 2 for s in orient_sigma])
+        self.angular_velocity_covariance = self._diag([gyro_sigma ** 2] * 3)
+        self.linear_acceleration_covariance = self._diag([accel_sigma ** 2] * 3)
+
+        self.publisher_ = self.create_publisher(Imu, 'imu', 10)
+
         i2c = board.I2C()
         self.sensor = adafruit_bno055.BNO055_I2C(i2c)
-        self.get_logger().info("BNO055 IMU initialized")
+        self.get_logger().info('BNO055 IMU initialized')
+        self._apply_stored_offsets(offsets_accel, offsets_gyro, offsets_mag)
 
-        # Define sensor-specific offsets
-        self.offsets_magnetometer = (53, -130, -477)
-        self.offsets_gyroscope = (-2, -2, 1)
-        self.offsets_accelerometer = (-59, -2, -22)
+        self.timer = self.create_timer(1.0 / rate_hz, self.publish_imu_data)
+        self.get_logger().info(
+            f'publishing sensor_msgs/Imu on {self.publisher_.topic_name} '
+            f'in frame {self.frame_id} at {rate_hz:.1f} Hz')
+
+    @staticmethod
+    def _diag(variances):
+        """Row-major 3x3 covariance with the given diagonal."""
+        cov = [0.0] * 9
+        for i, var in enumerate(variances):
+            cov[i * 3 + i] = var
+        return cov
+
+    def _apply_stored_offsets(self, accel, gyro, mag):
+        """Write the stored calibration offsets into the sensor's registers.
+
+        The previous node subtracted these triples from the *scaled* readings
+        instead. Because they are register LSBs, the accelerometer triple alone
+        injected 59 m/s^2 -- six g -- of phantom acceleration on X, enough to
+        make any gravity-based attitude estimate meaningless, and the
+        magnetometer triple was never used at all. Writing them to the offset
+        registers is what they are for; adafruit_bno055 handles the required
+        CONFIG_MODE round-trip.
+        """
+        try:
+            self.sensor.offsets_accelerometer = tuple(int(v) for v in accel)
+            self.sensor.offsets_gyroscope = tuple(int(v) for v in gyro)
+            self.sensor.offsets_magnetometer = tuple(int(v) for v in mag)
+        except Exception as exc:                     # noqa: BLE001 - I2C can fail any number of ways
+            self.get_logger().warn(f'could not write calibration offsets: {exc}')
+            return
+        self.get_logger().info(
+            f'wrote calibration offsets accel={tuple(accel)} '
+            f'gyro={tuple(gyro)} mag={tuple(mag)}')
+
+    @staticmethod
+    def _complete(reading, length):
+        """True if the sensor returned a full tuple with no None entries."""
+        return (reading is not None
+                and len(reading) == length
+                and all(v is not None for v in reading))
 
     def publish_imu_data(self):
-        # Create an Imu message
-        msg = Imu()
-
-        # Populate the header
-        msg.header = Header()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = 'imu'
-
-        # Read orientation (quaternion)
-        quaternion = self.sensor.quaternion
-        if quaternion is not None and len(quaternion) == 4:
-            try:
-                msg.orientation = Quaternion(
-                    x=float(quaternion[1]),
-                    y=float(quaternion[2]),
-                    z=float(quaternion[3]),
-                    w=float(quaternion[0])
-                )
-                msg.orientation_covariance = [-1.0] * 9  # Replace with known covariance if available
-            except (TypeError, ValueError):
-                self.get_logger().warn("Quaternion data type mismatch")
-        else:
-            self.get_logger().warn("Failed to read quaternion data")
-
-        # Read angular velocity and apply offsets
+        quat = self.sensor.quaternion
         gyro = self.sensor.gyro
-        if gyro is not None:
-            try:
-                msg.angular_velocity = Vector3(
-                    x=float(math.radians(gyro[0] - self.offsets_gyroscope[0])),
-                    y=float(math.radians(gyro[1] - self.offsets_gyroscope[1])),
-                    z=float(math.radians(gyro[2] - self.offsets_gyroscope[2]))
-                )
-                msg.angular_velocity_covariance = [-1.0] * 9  # Replace with known covariance if available
-            except (TypeError, ValueError):
-                self.get_logger().warn("Gyroscope data type mismatch")
-        else:
-            self.get_logger().warn("Failed to read gyroscope data")
+        # sensor.acceleration, not sensor.linear_acceleration: sensor_msgs/Imu
+        # expects gravity to be *included* -- that is why robot_localization
+        # offers imu0_remove_gravitational_acceleration, and why Ignition
+        # reports gravity in sim. BNO055's linear_acceleration is the
+        # gravity-compensated vector, which left cartographer with no gravity
+        # direction to align its 2D frame to.
+        accel = self.sensor.acceleration
 
-        # Read linear acceleration and apply offsets
-        accel = self.sensor.linear_acceleration
-        if accel is not None:
-            try:
-                msg.linear_acceleration = Vector3(
-                    x=float(accel[0] - self.offsets_accelerometer[0]),
-                    y=float(accel[1] - self.offsets_accelerometer[1]),
-                    z=float(accel[2] - self.offsets_accelerometer[2])
-                )
-                msg.linear_acceleration_covariance = [-1.0] * 9  # Replace with known covariance if available
-            except (TypeError, ValueError):
-                self.get_logger().warn("Linear acceleration data type mismatch")
-        else:
-            self.get_logger().warn("Failed to read linear acceleration data")
+        if not (self._complete(quat, 4) and self._complete(gyro, 3)
+                and self._complete(accel, 3)):
+            self.get_logger().warn('incomplete BNO055 read, skipping sample',
+                                   throttle_duration_sec=5.0)
+            return
 
-        # Publish the message
+        # The BNO055 returns an all-zero quaternion while the fusion algorithm
+        # is still converging. Publishing that would hand every consumer an
+        # invalid rotation, so skip the sample instead.
+        norm = math.sqrt(sum(float(c) ** 2 for c in quat))
+        if abs(norm - 1.0) > 0.1:
+            self.get_logger().warn(
+                f'BNO055 returned a non-unit quaternion (norm {norm:.3f}), '
+                'skipping sample', throttle_duration_sec=5.0)
+            return
+
+        msg = Imu()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.frame_id
+
+        w, x, y, z = (float(c) / norm for c in quat)
+        msg.orientation.w = w
+        msg.orientation.x = x
+        msg.orientation.y = y
+        msg.orientation.z = z
+        msg.orientation_covariance = self.orientation_covariance
+
+        # adafruit_bno055 scales the gyro registers by 0.001090830782496456,
+        # i.e. it already returns rad/s. The old math.radians() call divided
+        # every rate by a further 57.3.
+        msg.angular_velocity.x = float(gyro[0])
+        msg.angular_velocity.y = float(gyro[1])
+        msg.angular_velocity.z = float(gyro[2])
+        msg.angular_velocity_covariance = self.angular_velocity_covariance
+
+        msg.linear_acceleration.x = float(accel[0])
+        msg.linear_acceleration.y = float(accel[1])
+        msg.linear_acceleration.z = float(accel[2])
+        msg.linear_acceleration_covariance = self.linear_acceleration_covariance
+
         self.publisher_.publish(msg)
-        self.get_logger().debug("Published IMU data")
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -94,12 +173,13 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info("IMU publisher stopped cleanly")
+        node.get_logger().info('IMU publisher stopped cleanly')
     except Exception as e:
-        node.get_logger().error(f"Error: {e}")
+        node.get_logger().error(f'Error: {e}')
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

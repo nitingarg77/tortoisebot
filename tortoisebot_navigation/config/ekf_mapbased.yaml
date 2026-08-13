@@ -20,7 +20,12 @@ ekf_filter_node:
     base_link_frame: base_link
     world_frame:     odom
 
-    odom0: /odom
+    # Both inputs come from sim_covariance_relay, not straight off the bridge:
+    # ignition.msgs.Odometry and ignition.msgs.IMU have no covariance fields, so
+    # the bridged topics carry all-zero matrices, which this filter reads back as
+    # 1e-9. That made it reject 100% of IMU messages and copy wheel odometry
+    # through unchanged. See tortoisebot_gazebo/scripts/sim_covariance_relay.py.
+    odom0: /odom_with_covariance
     odom0_config: [true,  true,  false,
                    false, false, true,
                    true,  false, false,
@@ -32,6 +37,27 @@ ekf_filter_node:
     odom0_relative:          false
     odom0_pose_rejection_threshold:  5.0
     odom0_twist_rejection_threshold: 5.0
+
+    # BNO055 on hardware / Ignition imu_sensor in sim.
+    # Fuse yaw + yaw-rate only. Linear acceleration is deliberately NOT fused:
+    # Ignition reports gravity in linear_acceleration and publishes an all-zero
+    # covariance, so fusing it would inject a constant phantom acceleration.
+    imu0: /imu_with_covariance
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+
+    imu0_queue_size:         10
+    imu0_differential:       false
+    imu0_relative:           false
+    imu0_remove_gravitational_acceleration: true
+    # These are compared against the *squared* Mahalanobis distance, so 5.0 is a
+    # ~2.2-sigma gate, matching odom0 above. The old 0.8 was a 0.64 limit, which
+    # rejected everything the moment odom yaw and IMU yaw disagreed at all.
+    imu0_pose_rejection_threshold:  5.0
+    imu0_twist_rejection_threshold: 5.0
 
     process_noise_covariance: [0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
                                0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,

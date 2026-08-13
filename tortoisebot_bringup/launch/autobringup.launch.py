@@ -63,14 +63,16 @@ def generate_launch_description():
         condition=UnlessCondition(use_sim_time)
     )
 
-    # BNO055 IMU node
-    # imu = Node(
-    #     package='tortoisebot_imu',
-    #     executable='imu_node.py',
-    #     name='imu_publisher',
-    #     output='screen',
-    #     condition=UnlessCondition(use_sim_time)
-    # )
+    # BNO055 IMU node. Real robot only -- in sim the Ignition imu_sensor feeds
+    # /imu through ros_gz_bridge instead. Publishes /imu, which is what
+    # cartographer.launch.py remaps imu to.
+    imu = Node(
+        package='tortoisebot_imu',
+        executable='imu_node.py',
+        name='imu_publisher',
+        output='screen',
+        condition=UnlessCondition(use_sim_time)
+    )
 
 
     motors = Node(
@@ -212,7 +214,7 @@ def generate_launch_description():
         ignition_sim,
         state_publisher,
         lidar,
-        # imu,
+        imu,
         motors,
         camera,
         cartographer,
