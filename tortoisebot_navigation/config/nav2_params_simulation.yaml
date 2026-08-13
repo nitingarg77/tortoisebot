@@ -348,6 +348,9 @@ velocity_smoother:
     max_velocity: [0.43, 0.0, 1.5]
     min_velocity: [-0.43, 0.0, -1.5]
     max_accel: [0.20, 0.0, 1.5]
+    # Was unset, so it defaulted to [-2.5, 0.0, -3.2]. Match controller_server's
+    # decel_lim_x/-theta instead, now that the smoother is actually in the loop.
+    max_decel: [-1.5, 0.0, -1.5]
     odom_topic: "/odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

@@ -110,7 +110,12 @@ def generate_launch_description():
         name='controller_server',
         output='screen',
         parameters=[params_file, {'use_sim_time': use_sim_time}],
-        remappings=[('cmd_vel', '/cmd_vel')]
+        # Must be cmd_vel_nav, not /cmd_vel: velocity_smoother listens on
+        # cmd_vel_nav and republishes to /cmd_vel. Publishing straight to
+        # /cmd_vel left the smoother with zero publishers, so nothing was
+        # acceleration-limited. behavior_server deliberately keeps publishing
+        # to /cmd_vel directly, matching upstream nav2.
+        remappings=[('cmd_vel', 'cmd_vel_nav')]
     )
 
     behavior = Node(
