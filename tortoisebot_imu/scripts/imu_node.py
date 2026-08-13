@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """BNO055 IMU publisher for the TortoiseBot.
 
-Publishes sensor_msgs/Imu on /imu in the imu_link frame with covariances
+Publishes sensor_msgs/Imu on /imu in the base_link frame with covariances
 filled in. Consumers are cartographer_node (which remaps imu:=/imu) and, when
 enabled, robot_localization's ekf_filter_node.
 """
@@ -20,11 +20,22 @@ class ImuPublisher(Node):
     def __init__(self):
         super().__init__('imu_publisher')
 
-        # frame_id must name a link that actually exists in TF.
-        # tortoisebotreal.xacro declares imu_link at (0, 0, 0.11) on base_link;
-        # there is no frame called 'imu', and both cartographer and the EKF drop
-        # every message whose frame they cannot look up.
-        self.frame_id = self.declare_parameter('frame_id', 'imu_link').value
+        # frame_id must name a link that actually exists in TF -- there is no
+        # frame called 'imu', and both cartographer and the EKF drop every
+        # message whose frame they cannot look up.
+        #
+        # base_link rather than imu_link, even though the chip is physically at
+        # imu_link (0, 0, 0.11) in tortoisebotreal.xacro. imu_joint is a pure z
+        # translation with no rotation and the robot rotates about z, so
+        # orientation and angular velocity are identical in the two frames and
+        # the lever-arm acceleration terms w x (w x r) and a x r are both exactly
+        # zero: for planar motion the readings are the same either way. Labelling
+        # them base_link lets Cartographer keep tracking_frame = base_link, which
+        # avoids dragging the 0.11 m offset into map->odom as z = -0.110 -- the
+        # colocation assert would otherwise force tracking_frame = imu_link.
+        # imu_link stays in the URDF as the record of where the chip really is.
+        # Revisit if linear acceleration is ever fused or the robot goes 3D.
+        self.frame_id = self.declare_parameter('frame_id', 'base_link').value
 
         # 50 Hz to match the Ignition imu_sensor in sim. The BNO055 fusion
         # output tops out near 100 Hz and each cycle is three short I2C reads,

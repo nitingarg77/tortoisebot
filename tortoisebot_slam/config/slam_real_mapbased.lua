@@ -19,10 +19,17 @@ options = {
   map_builder = MAP_BUILDER,
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "odom",
-  -- Must be imu_link (not base_link) whenever use_imu_data = true: Cartographer
-  -- asserts the IMU frame is colocated with tracking_frame (translation < 1e-5),
-  -- and imu_link sits 0.11 m above base_link.
-  tracking_frame = "imu_link",
+  -- Stays base_link even with use_imu_data = true. Cartographer asserts the IMU
+  -- frame is colocated with tracking_frame (translation < 1e-5), and imu_link
+  -- sits 0.11 m above base_link -- but the IMU publishes its data labelled
+  -- base_link, so the assert is satisfied. That is sound rather than a dodge:
+  -- imu_joint is a pure z translation with no rotation and the robot rotates
+  -- about z, so orientation and angular velocity are frame-invariant here and
+  -- the lever-arm terms w x (w x r) and a x r are both exactly zero.
+  -- Setting tracking_frame = imu_link instead put z = -0.110 into the published
+  -- transform, which on hardware eats most of the global costmap voxel_layer's
+  -- origin_z headroom (the lidar would sit at 0.057 m rather than 0.167 m).
+  tracking_frame = "base_link",
   published_frame = "base_link",
   odom_frame = "odom",
   provide_odom_frame = false,
