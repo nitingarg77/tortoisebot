@@ -3,7 +3,8 @@
 <package format="3">
   <name>tortoisebot_bringup</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Top-level launch files that compose the TortoiseBot stack for
+    either Ignition simulation or the real robot.</description>
   <maintainer email="shubhamnandi@rigbetellabs.com">Shubham</maintainer>
   <maintainer email="vinayaknayak@rigbetellabs.com">Vinayak</maintainer>
 
@@ -13,6 +14,36 @@
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+
+  <!-- Launch machinery used by autobringup.launch.py itself. -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+
+  <!-- Always required, both in simulation and on the robot. -->
+  <exec_depend>tortoisebot_description</exec_depend>
+  <exec_depend>tortoisebot_navigation</exec_depend>
+  <exec_depend>tortoisebot_slam</exec_depend>
+
+  <!-- autobringup.launch.py drives either a simulator or a physical robot,
+       and the two need mutually exclusive driver stacks. Declaring both
+       unconditionally would force every simulation machine to build the
+       Raspberry Pi lidar driver, which needs the YDLidar SDK installed
+       system wide, and would force every robot to install Ignition.
+
+       These are REP 149 conditional dependencies, keyed on TORTOISEBOT_TARGET.
+       Unset means simulation, which is the default for development on an
+       x86 workstation. On the robot, export TORTOISEBOT_TARGET=robot before
+       running rosdep install and colcon build. See README section 1.2. -->
+
+  <!-- Simulation (use_sim_time:=True). -->
+  <exec_depend condition="$TORTOISEBOT_TARGET != robot">tortoisebot_gazebo</exec_depend>
+
+  <!-- Real robot (use_sim_time:=False). -->
+  <exec_depend condition="$TORTOISEBOT_TARGET == robot">tortoisebot_firmware</exec_depend>
+  <exec_depend condition="$TORTOISEBOT_TARGET == robot">tortoisebot_imu</exec_depend>
+  <exec_depend condition="$TORTOISEBOT_TARGET == robot">ydlidar_ros2_driver</exec_depend>
+  <exec_depend condition="$TORTOISEBOT_TARGET == robot">camera_ros</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

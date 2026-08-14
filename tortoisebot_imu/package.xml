@@ -3,7 +3,8 @@
 <package format="3">
   <name>tortoisebot_imu</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>BNO055 IMU driver node for the real TortoiseBot. Publishes
+    sensor_msgs/Imu on imu with populated covariances.</description>
   <maintainer email="shubhamnandi@rigbetellabs.com">Shubham</maintainer>
   <maintainer email="vinayaknayak@rigbetellabs.com">Vinayak</maintainer>
   <license>TODO: License declaration</license>
@@ -12,6 +13,10 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+
+  <!-- imu_node.py also imports board and adafruit_bno055, which have no rosdep
+       keys and are Raspberry Pi only. Install them with pip on the robot; see
+       README 1.3. -->
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

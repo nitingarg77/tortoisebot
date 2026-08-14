@@ -18,10 +18,16 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
 
     desc_pkg    = get_package_share_directory('tortoisebot_description')
-    gazebo_pkg  = get_package_share_directory('tortoisebot_gazebo')
     slam_pkg    = get_package_share_directory('tortoisebot_slam')
     nav_pkg     = get_package_share_directory('tortoisebot_navigation')
+
+    # Resolved lazily, via substitution rather than get_package_share_directory,
+    # so that neither package has to be installed unless it is actually used.
+    # ydlidar_ros2_driver is robot only and tortoisebot_gazebo is simulation
+    # only; an eager lookup here would make every robot install the simulator
+    # and every simulator install the Raspberry Pi lidar driver.
     lidar_pkg   = FindPackageShare('ydlidar_ros2_driver')
+    gazebo_pkg  = FindPackageShare('tortoisebot_gazebo')
 
     default_map     = os.path.join(nav_pkg,   'maps',   'explored_map.yaml')
     sim_rviz_config = os.path.join(desc_pkg,  'rviz',   'simulation.rviz')
@@ -36,11 +42,12 @@ def generate_launch_description():
     map_file     = LaunchConfiguration('map_file')
     camera_port  = LaunchConfiguration('camera_port')
 
-    world_file = os.path.join(gazebo_pkg, 'worlds', 'nav2_test_world.sdf')
+    world_file = PathJoinSubstitution(
+        [gazebo_pkg, 'worlds', 'nav2_test_world.sdf'])
 
     ignition_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(gazebo_pkg, 'launch', 'ignition_sim.launch.py')),
+            PathJoinSubstitution([gazebo_pkg, 'launch', 'ignition_sim.launch.py'])),
         launch_arguments={
             'world':   world_file,
             'spawn_x': '0.0',

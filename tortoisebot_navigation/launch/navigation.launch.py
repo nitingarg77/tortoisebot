@@ -13,7 +13,6 @@ def generate_launch_description():
     nav2_launch_dir = os.path.join(
         get_package_share_directory('nav2_bringup'), 'launch')
     nav_pkg     = get_package_share_directory('tortoisebot_navigation')
-    bringup_pkg = get_package_share_directory('tortoisebot_bringup')
 
     default_map  = os.path.join(nav_pkg, 'maps', 'explored_map.yaml')
     params_file  = os.path.join(nav_pkg, 'config', 'nav2_params_simulation.yaml')

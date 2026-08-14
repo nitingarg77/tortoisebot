@@ -3,7 +3,8 @@
 <package format="3">
   <name>tortoisebot_slam</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Cartographer configuration and launch files for TortoiseBot
+    mapping and odometry-only localisation.</description>
   <maintainer email="shubhamnandi@rigbetellabs.com">Shubham</maintainer>
   <maintainer email="vinayaknayak@rigbetellabs.com">Vinayak</maintainer>
   <license>TODO: License declaration</license>
@@ -12,6 +13,15 @@
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <!-- cartographer_node and cartographer_occupancy_grid_node. -->
+  <exec_depend>cartographer_ros</exec_depend>
+
+  <!-- ekf.yaml lives in this package's config/ directory. -->
+  <exec_depend>robot_localization</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

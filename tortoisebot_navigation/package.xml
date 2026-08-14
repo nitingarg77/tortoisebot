@@ -3,7 +3,8 @@
 <package format="3">
   <name>tortoisebot_navigation</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Nav2 parameter sets, saved maps and launch files for TortoiseBot
+    map-based navigation and SLAM navigation.</description>
   <maintainer email="shubhamnandi@rigbetellabs.com">Shubham</maintainer>
   <maintainer email="vinayaknayak@rigbetellabs.com">Vinayak</maintainer>
   <license>TODO: License declaration</license>
@@ -12,6 +13,26 @@
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <!-- Nav2 servers launched individually rather than through the
+       nav2_bringup composition, so each one is named explicitly. -->
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>nav2_behaviors</exec_depend>
+  <exec_depend>nav2_bt_navigator</exec_depend>
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_smoother</exec_depend>
+  <exec_depend>nav2_velocity_smoother</exec_depend>
+  <exec_depend>nav2_waypoint_follower</exec_depend>
+
+  <!-- ekf_mapbased.yaml in config/ is consumed by ekf_filter_node. -->
+  <exec_depend>robot_localization</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
