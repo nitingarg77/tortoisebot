@@ -38,10 +38,20 @@ ekf_filter_node:
     odom0_pose_rejection_threshold:  5.0
     odom0_twist_rejection_threshold: 5.0
 
-    # BNO055 on hardware / Ignition imu_sensor in sim.
-    # Fuse yaw + yaw-rate only. Linear acceleration is deliberately NOT fused:
-    # Ignition reports gravity in linear_acceleration and publishes an all-zero
-    # covariance, so fusing it would inject a constant phantom acceleration.
+    # BNO055 on hardware / Ignition imu_sensor in sim, via sim_covariance_relay.
+    # Fuse yaw + yaw-rate only; all three linear acceleration axes stay false.
+    #
+    # The reason originally given for excluding acceleration -- that Ignition
+    # publishes an all-zero covariance -- no longer holds, because the relay
+    # fixes exactly that. It is still excluded, for a plainer reason: this is a
+    # planar wheeled robot whose wheel odometry already measures linear velocity
+    # directly, so integrating an accelerometer adds drift without adding
+    # information. two_d_mode already pins z, roll and pitch.
+    #
+    # If you do enable it, note that imu0_remove_gravitational_acceleration
+    # subtracts gravity using the filter's current orientation estimate, so the
+    # result is only as good as the fused attitude -- on hardware that means the
+    # BNO055's axis orientation relative to base_link must be confirmed first.
     imu0: /imu_with_covariance
     imu0_config: [false, false, false,
                   false, false, true,
