@@ -157,6 +157,29 @@ source install/setup.bash
 > [!NOTE]
 > `slam_only:=True` only takes effect when `exploration:=True`. When `exploration:=False` (map-based nav), the `slam_only` argument is ignored.
 
+**Namespacing** — for running more than one robot on a single DDS domain:
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `namespace` | `''` | Top-level namespace, e.g. `robot1` |
+| `use_namespace` | `False` | Whether to actually apply it |
+
+```bash
+ros2 launch tortoisebot_bringup autobringup.launch.py \
+    namespace:=robot1 use_namespace:=True
+```
+
+Everything moves under `/robot1/…`, **including TF**: each robot publishes its
+own tree on `/robot1/tf`, which is why frame names stay `map`, `odom` and
+`base_link` rather than being prefixed. Leaving both arguments at their
+defaults is byte-for-byte the same as having no namespace support.
+
+> [!NOTE]
+> This is ROS-side namespacing. Two robots can share a DDS domain, but not a
+> single Ignition world — the gz-side topics are baked into the SDF. See
+> [MODULE.md](MODULE.md) section 5 for the details, including why the costmap
+> scan topics need a `<robot_namespace>` placeholder rather than a relative name.
+
 ### 2.4 Available Launch Files
 
 | Category | Launch File | Purpose |

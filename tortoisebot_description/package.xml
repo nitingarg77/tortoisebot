@@ -18,6 +18,9 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
 
+  <!-- ReplaceString, used to fill in the namespaced RViz config. -->
+  <exec_depend>nav2_common</exec_depend>
+
   <!-- The .xacro models are expanded at launch time by Command(['xacro ', ...]),
        so xacro is a runtime dependency, not just a build-time one. -->
   <exec_depend>xacro</exec_depend>

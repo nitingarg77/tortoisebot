@@ -157,7 +157,70 @@ the launch will fail at runtime on a missing package.
 
 ---
 
-## 5. Known gaps
+## 5. Running under a namespace
+
+The whole stack can be pushed into a namespace, so several robots can share one
+DDS domain:
+
+```bash
+ros2 launch tortoisebot_bringup autobringup.launch.py \
+    namespace:=robot1 use_namespace:=True
+```
+
+Both arguments default to off (`namespace:=''`, `use_namespace:=False`), and
+that path is behaviourally identical to having no namespace support at all.
+
+### Frame names are deliberately *not* prefixed
+
+This is the part that surprises people, and an earlier version of this document
+got it wrong. There is no `frame_prefix` anywhere and no `map` → `robot1/map`
+rewriting. Instead every node remaps `/tf` → `tf` and `/tf_static` →
+`tf_static`:
+
+```python
+TF_REMAPPINGS = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
+```
+
+`/tf` is an absolute name, so it normally escapes any namespace. Making it
+relative lets `PushRosNamespace` move it to `/robot1/tf`, which gives each robot
+its **own TF tree**. Two robots can then both use `map`, `odom` and `base_link`
+without colliding, because the trees are separate. This is what `nav2_bringup`
+does, and it is why the Cartographer `.lua` files and every `global_frame` /
+`robot_base_frame` setting are untouched.
+
+**The consequence to remember:** a node that misses these two remappings keeps
+publishing to the global `/tf` and silently corrupts the tree. Any new node
+added to this stack needs them.
+
+### The two things that could not simply follow the namespace
+
+- **Costmap observation topics.** Costmap layers run on a child node, so a
+  relative `scan` resolves to `/robot1/local_costmap/scan`, not `/robot1/scan`.
+  Newer nav2 has `joinWithParentNamespace` to fix this; **1.1.20 here does
+  not**. The params therefore carry a `<robot_namespace>/scan` placeholder that
+  `ReplaceString` fills in at launch. An empty namespace yields `/scan`.
+- **The `ros_gz_bridge` arguments**, which name the Ignition topic and the ROS
+  topic with a single string. This version (0.244.25) has no `config_file`
+  option to separate them, so the arguments stay absolute to match the SDF and
+  the ROS side is moved with remappings. `/clock` is deliberately excluded — it
+  is global, and namespacing it would leave every `use_sim_time` node waiting
+  for a clock nobody publishes. The bridge's `qos_overrides` parameter names
+  embed the fully qualified topic name, so they are built in an
+  `OpaqueFunction` once the namespace is known.
+
+RViz configs store absolute topic names and cannot be pushed into a namespace,
+so there are two variants: `rviz/nav2.rviz` and `rviz/nav2_namespaced.rviz`,
+the latter using the same `<robot_namespace>` placeholder. This mirrors
+upstream's `nav2_namespaced_view.rviz`.
+
+### What this does not give you
+
+**Two robots in a single Ignition world.** The gz-side topics (`/scan`, `/imu`,
+`/cmd_vel`) are baked into `tortoisebot_ignition.gazebo`, as is the model name
+inside `tf_topic`. Namespacing is ROS-side only; a second robot in the same
+world would need those templated per robot.
+
+## 6. Known gaps
 
 These are real limits of the current code, listed so nobody rediscovers them.
 
@@ -166,18 +229,6 @@ talks directly to GPIO pins. Swapping motor hardware means rewriting that node
 rather than selecting a plugin. Closing this properly requires wheel encoders,
 which this chassis does not have — without them there is no velocity feedback to
 close a loop around, and no `odom` on the real robot.
-
-**Not namespace-safe — cannot yet run two robots on one DDS domain.** No launch
-file uses `PushRosNamespace`. Topic namespacing alone would not be sufficient:
-there are 26+ hardcoded TF frame names (`map`, `odom`, `base_link`, `imu_link`)
-spread across six config files in `tortoisebot_navigation/config` and
-`tortoisebot_slam/config`. Two robots would publish colliding `map` and `odom`
-frames into one TF tree. A real fix needs frame prefixing everywhere
-(`robot_state_publisher`'s `frame_prefix`, Cartographer's four frame settings,
-the EKF's four, and every Nav2 `global_frame`/`robot_base_frame`), and the
-`ros_gz_bridge` arguments name the gz and ROS topics with a single string, so
-the bridge needs converting to its YAML config form to namespace only the ROS
-side. Interim workaround for isolating robots: separate `ROS_DOMAIN_ID`.
 
 **Third-party drivers vendored in-tree.** `v4l2_camera`, `ydlidar_ros2_driver`
 and `YDLidar-SDK` are pinned copies rather than vcs-managed dependencies.

@@ -17,6 +17,9 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 
+  <!-- RewrittenYaml and ReplaceString, used to namespace the params. -->
+  <exec_depend>nav2_common</exec_depend>
+
   <!-- Nav2 servers launched individually rather than through the
        nav2_bringup composition, so each one is named explicitly. -->
   <exec_depend>nav2_bringup</exec_depend>

@@ -17,6 +17,9 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 
+  <!-- RewrittenYaml, used to namespace the EKF params. -->
+  <exec_depend>nav2_common</exec_depend>
+
   <!-- sim_covariance_relay.py -->
   <exec_depend>rclpy</exec_depend>
   <exec_depend>nav_msgs</exec_depend>

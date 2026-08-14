@@ -6,11 +6,12 @@ from launch.actions import (
     IncludeLaunchDescription,
     DeclareLaunchArgument,
     TimerAction,
+    GroupAction,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression, PathJoinSubstitution
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
 
@@ -41,6 +42,17 @@ def generate_launch_description():
     slam_only    = LaunchConfiguration('slam_only')
     map_file     = LaunchConfiguration('map_file')
     camera_port  = LaunchConfiguration('camera_port')
+    namespace     = LaunchConfiguration('namespace')
+    use_namespace = LaunchConfiguration('use_namespace')
+
+    # Forwarded verbatim to every included launch file. Each one declares the
+    # same pair and pushes its own nodes, rather than this file wrapping the
+    # includes in one group, because the Gazebo process and the gz side of the
+    # bridge must stay outside any namespace.
+    ns_args = {
+        'namespace':     namespace,
+        'use_namespace': use_namespace,
+    }
 
     world_file = PathJoinSubstitution(
         [gazebo_pkg, 'worlds', 'nav2_test_world.sdf'])
@@ -52,6 +64,7 @@ def generate_launch_description():
             'world':   world_file,
             'spawn_x': '0.0',
             'spawn_y': '0.0',
+            **ns_args,
         }.items(),
         condition=IfCondition(use_sim_time)
     )
@@ -59,7 +72,7 @@ def generate_launch_description():
     state_publisher = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(desc_pkg, 'launch', 'state_publisher.launch.py')),
-        launch_arguments={'use_sim_time': 'False'}.items(),
+        launch_arguments={'use_sim_time': 'False', **ns_args}.items(),
         condition=UnlessCondition(use_sim_time)
     )
 
@@ -126,7 +139,8 @@ def generate_launch_description():
             ])),
             launch_arguments={
                 'use_sim_time': use_sim_time,
-                'is_odom_only': PythonExpression(["'false' if '", exploration, "' == 'true' or '", exploration, "' == 'True' else 'true'"])
+                'is_odom_only': PythonExpression(["'false' if '", exploration, "' == 'true' or '", exploration, "' == 'True' else 'true'"]),
+                **ns_args,
             }.items()
         )]
     )
@@ -140,6 +154,7 @@ def generate_launch_description():
             launch_arguments={
                 'map':         map_file,
                 'use_sim_time': use_sim_time,
+                **ns_args,
             }.items()
         )]
     )
@@ -155,6 +170,7 @@ def generate_launch_description():
             ])),
             launch_arguments={
                 'use_sim_time': use_sim_time,
+                **ns_args,
             }.items()
         )]
     )
@@ -167,6 +183,7 @@ def generate_launch_description():
             launch_arguments={
                 'rvizconfig': nav_rviz_config,
                 'use_sim_time': use_sim_time,
+                **ns_args,
             }.items(),
             condition=IfCondition(PythonExpression([
                 "'true' if ('", exploration, "' == 'true' or '", exploration, "' == 'True') and ('", slam_only, "' == 'false' or '", slam_only, "' == 'False') else 'false'"
@@ -182,6 +199,7 @@ def generate_launch_description():
             launch_arguments={
                 'rvizconfig': nav_rviz_config,
                 'use_sim_time': use_sim_time,
+                **ns_args,
             }.items(),
             condition=IfCondition(PythonExpression([
                 "'true' if ('", exploration, "' == 'true' or '", exploration, "' == 'True') and ('", slam_only, "' == 'true' or '", slam_only, "' == 'True') else 'false'"
@@ -197,6 +215,7 @@ def generate_launch_description():
             launch_arguments={
                 'rvizconfig': sim_rviz_config,
                 'use_sim_time': use_sim_time,
+                **ns_args,
             }.items(),
             condition=UnlessCondition(exploration)
         )]
@@ -216,14 +235,29 @@ def generate_launch_description():
                               description='Path to saved map yaml (used when exploration=False)'),
         DeclareLaunchArgument('camera_port',  default_value='0',
                               description='Camera port (e.g. 0 for /dev/video0, or /base/soc/...)'),
+        DeclareLaunchArgument('namespace',     default_value='',
+                              description='Robot namespace. Empty means no namespace.'),
+        DeclareLaunchArgument('use_namespace', default_value='False',
+                              description='Whether to push the whole stack into "namespace"'),
 
 
         ignition_sim,
         state_publisher,
-        lidar,
-        imu,
-        motors,
-        camera,
+
+        # The robot-only drivers are grouped rather than sent namespace
+        # arguments, because ydlidar_launch.py is third-party and does not
+        # declare them; passing an undeclared argument to an included launch
+        # file is an error. PushRosNamespace applies to included files too, so
+        # the group achieves the same thing without touching vendor code.
+        GroupAction([
+            PushRosNamespace(namespace=namespace,
+                             condition=IfCondition(use_namespace)),
+            lidar,
+            imu,
+            motors,
+            camera,
+        ]),
+
         cartographer,
         navigation,
         navigation_slam,

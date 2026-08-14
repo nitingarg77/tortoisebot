@@ -20,12 +20,18 @@ ekf_filter_node:
     base_link_frame: base_link
     world_frame:     odom
 
+    # Topic names are relative so that they follow the node into a namespace.
+    # sim_covariance_relay already publishes relative names, so the pairing
+    # holds with or without one. The frame names below are deliberately NOT
+    # prefixed: each robot gets its own TF tree via the /tf remapping in the
+    # launch files, so identical frame names in separate trees cannot collide.
+    #
     # Both inputs come from sim_covariance_relay, not straight off the bridge:
     # ignition.msgs.Odometry and ignition.msgs.IMU have no covariance fields, so
     # the bridged topics carry all-zero matrices, which this filter reads back as
     # 1e-9. That made it reject 100% of IMU messages and copy wheel odometry
     # through unchanged. See tortoisebot_gazebo/scripts/sim_covariance_relay.py.
-    odom0: /odom_with_covariance
+    odom0: odom_with_covariance
     odom0_config: [true,  true,  false,
                    false, false, true,
                    true,  false, false,
@@ -52,7 +58,7 @@ ekf_filter_node:
     # subtracts gravity using the filter's current orientation estimate, so the
     # result is only as good as the fused attitude -- on hardware that means the
     # BNO055's axis orientation relative to base_link must be confirmed first.
-    imu0: /imu_with_covariance
+    imu0: imu_with_covariance
     imu0_config: [false, false, false,
                   false, false, true,
                   false, false, false,
