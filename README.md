@@ -104,27 +104,45 @@ git clone -b ros2-humble https://github.com/rigbetellabs/tortoisebot.git
 
 ### 2.2 Build the Workspace
 
-> [!IMPORTANT]
-> Always run `rosdep` first to resolve any remaining system dependencies automatically.
+The robot and the simulator need mutually exclusive driver stacks:
+`ydlidar_ros2_driver` needs the YDLidar SDK installed system-wide and will not
+build on an ordinary workstation, while Ignition is pointless on the Pi. Which
+set gets pulled in is selected by the `TORTOISEBOT_TARGET` environment
+variable, using REP-149 conditional dependencies in
+`tortoisebot_bringup/package.xml`.
+
+**Simulation / Remote PC build** — this is the default, so nothing to export:
 
 ```bash
 cd ~/tb_ws
 rosdep install --from-paths src --ignore-src -r -y
-```
-
-**Simulation / Remote PC build** (excludes hardware-only packages):
-
-```bash
-colcon build --packages-ignore ydlidar_sdk ydlidar_ros2_driver v4l2_camera tortoisebot_firmware tortoisebot_imu
+colcon build --packages-up-to tortoisebot_bringup tortoisebot_control
 source install/setup.bash
 ```
 
-**Real Robot build** (run on the robot after the above, then source again):
+**Real Robot build** — run on the robot:
 
 ```bash
-colcon build --packages-select ydlidar_sdk ydlidar_ros2_driver v4l2_camera tortoisebot_firmware tortoisebot_imu
+cd ~/tb_ws
+export TORTOISEBOT_TARGET=robot
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --packages-up-to tortoisebot_bringup tortoisebot_control
 source install/setup.bash
 ```
+
+> [!IMPORTANT]
+> Forgetting `export TORTOISEBOT_TARGET=robot` on the robot fails **silently**:
+> `rosdep` will skip the lidar, IMU, camera and motor packages, the build will
+> succeed, and the launch will then die at runtime on a missing package. Set it
+> in `~/.bashrc` on the robot so it cannot be forgotten.
+
+> [!NOTE]
+> `--packages-up-to` works because every package now declares its real
+> dependencies. Before that, all five of the core packages declared none, and
+> `rosdep install` reported success while installing nothing. If you are
+> adapting this stack to different hardware, read
+> [MODULE.md](MODULE.md) — it documents the interface
+> contract, which values are chassis-specific, and the known gaps.
 
 ### 2.3 Key Launch Arguments
 
