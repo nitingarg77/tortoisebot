@@ -71,6 +71,24 @@ sudo apt install \
   ros-humble-ros-gz-interfaces
 ```
 
+### 1.3 Robot-Only Python Dependencies
+
+These are needed **on the robot only** — skip them on a simulation or remote PC. The BNO055 IMU node and the motor driver both talk to the Raspberry Pi's hardware directly:
+
+```bash
+pip3 install adafruit-circuitpython-bno055 Adafruit-Blinka RPi.GPIO
+```
+
+The IMU is an I2C device at address `0x28`. Enable I2C on the Pi and confirm the sensor is visible before the first bringup:
+
+```bash
+sudo apt install i2c-tools
+i2cdetect -y 1        # expect 28 in the grid
+```
+
+> [!NOTE]
+> `imu_publisher` starts automatically with `autobringup.launch.py` when `use_sim_time:=False`. If these packages are missing the node will fail to start and Cartographer will run without IMU data.
+
 ---
 
 ## 2. Workspace Setup
@@ -134,6 +152,29 @@ source install/setup.bash
 | **Visualization** | `rviz.launch.py` | RViz2 sensor & map visualization |
 | **Sim** | `ignition_sim.launch.py` | Ignition Gazebo simulation |
 | **Sim** | `gazebo.launch.py` | Gazebo Classic simulation |
+
+### 2.5 Sensing & Localization Pipeline
+
+| Topic | Rate | Source | Consumed by |
+|---|---|---|---|
+| `/scan` | 10 Hz | YDLidar / Ignition `gpu_lidar` | Cartographer, both costmaps |
+| `/imu` | 50 Hz | BNO055 / Ignition `imu_sensor` | Cartographer; EKF in sim |
+| `/odom` | 50 Hz | Ignition DiffDrive — *sim only* | Cartographer, Nav2, EKF |
+| `/odometry/filtered` | 50 Hz | `robot_localization` EKF — *sim only* | TF `odom` → `base_link` |
+| `/cmd_vel_nav` | 10 Hz | `controller_server` | `velocity_smoother` |
+| `/cmd_vel` | 20 Hz | `velocity_smoother` | Motor driver / DiffDrive |
+
+Cartographer uses the IMU for gravity alignment and rotation extrapolation between scans (`use_imu_data = true`). In simulation the EKF additionally fuses **yaw and yaw-rate only** — linear acceleration is deliberately not fused on a planar wheeled robot.
+
+**`odom` → `base_link` has a different publisher in each mode**, and only ever one:
+
+- **Simulation** — the EKF (`publish_tf: true`). The DiffDrive plugin's own TF is deliberately not bridged.
+- **Real robot** — Cartographer itself (`provide_odom_frame = true` in `slam_real.lua`). The EKF node is disabled in `autobringup.launch.py`, because there is nothing for it to fuse.
+
+> [!IMPORTANT]
+> The real robot has **no wheel encoders**. `differential.py` drives the motors open-loop over GPIO and publishes no odometry at all, which is why the hardware Cartographer configs run with `use_odometry = false` and the IMU is the only non-lidar source of motion information. Wheel odometry on `/odom` exists in simulation only.
+
+In simulation an extra node, `sim_covariance_relay`, republishes `/imu` and `/odom` as `/imu_with_covariance` and `/odom_with_covariance` for the EKF. It exists because `ignition.msgs.IMU` and `ignition.msgs.Odometry` have no covariance fields at all, so the bridged topics carry all-zero matrices, which `robot_localization` reads as near-infinite confidence and rejects outright. Nav2 and Cartographer read the plain topics and are unaffected.
 
 ---
 
