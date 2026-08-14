@@ -54,10 +54,27 @@ ekf_filter_node:
     # directly, so integrating an accelerometer adds drift without adding
     # information. two_d_mode already pins z, roll and pitch.
     #
-    # If you do enable it, note that imu0_remove_gravitational_acceleration
-    # subtracts gravity using the filter's current orientation estimate, so the
-    # result is only as good as the fused attitude -- on hardware that means the
-    # BNO055's axis orientation relative to base_link must be confirmed first.
+    # There is a second reason, and it is a tripwire. DO NOT enable the
+    # acceleration axes (positions 13-15) without first reverting the IMU frame
+    # relabel. The IMU publishes its data labelled base_link while the chip
+    # physically sits at imu_link, 0.11 m up. That is exact for orientation and
+    # angular velocity, because the offset is parallel to the yaw axis and the
+    # lever-arm terms w x (w x r) and a x r vanish identically -- but it stops
+    # being exact for linear acceleration the moment the robot pitches or rolls,
+    # e.g. crossing a bump on the castor. Fusing acceleration under the relabel
+    # would quietly absorb that error.
+    #
+    # To revert: set ignition_frame_id back to imu_link in
+    # tortoisebot_ignition.gazebo, the frame_id parameter back to imu_link in
+    # tortoisebot_imu/scripts/imu_node.py, and tracking_frame back to imu_link in
+    # all three tortoisebot_slam Lua configs -- then expect z = -0.110 in
+    # map->odom again. The global costmap voxel_layer's origin_z is already
+    # -0.2, which leaves about 0.26 m of headroom under that offset.
+    #
+    # imu0_remove_gravitational_acceleration subtracts gravity using the
+    # filter's current orientation estimate, so it is only as good as the fused
+    # attitude. The BNO055's axes were checked on the robot on 2026-09-21: x
+    # forward, y left, z up, matching base_link, so no remap is needed.
     imu0: imu_with_covariance
     imu0_config: [false, false, false,
                   false, false, true,
