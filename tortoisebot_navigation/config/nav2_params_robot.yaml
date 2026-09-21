@@ -254,15 +254,16 @@ global_costmap:
         enabled: True
         publish_voxel_map: True
         # Points below origin_z are discarded, so this is a floor, not a datum.
-        # Cartographer runs with tracking_frame = imu_link (the IMU frame must be
-        # colocated with it), which puts z = -0.110 into the published transform
-        # and leaves the lidar at 0.057 m in the map frame rather than 0.167 m.
-        # At 0.0 that is barely one voxel of headroom: a planar scan returns at
-        # the lidar's own height, so a 2 degree pitch over the castor sinks
-        # returns at 2 m range by 0.070 m and they are dropped silently. -0.2
-        # restores ~0.26 m of margin, about 7 degrees at that range. Nothing is
-        # lost at the top -- the column shortens from 0.8 to 0.6 m, and a planar
-        # lidar never marks anything above its own height anyway.
+        # A planar scan returns at the lidar's own height, 0.167 m in the map
+        # frame, and a 2 degree pitch over the castor sinks returns at 2 m range
+        # by 0.070 m. -0.2 leaves ~0.37 m of margin, about 10 degrees at that
+        # range. It was lowered from 0.0 when Cartographer ran with
+        # tracking_frame = imu_link, which put z = -0.110 into the published
+        # transform and left the lidar at only 0.057 m; the IMU data is now
+        # labelled base_link instead, but the floor is kept low so that reverting
+        # the relabel cannot silently start dropping scans. Nothing is lost at the
+        # top -- the column spans -0.2 to 0.6 m, and a planar lidar never marks
+        # anything above its own height anyway.
         origin_z: -0.2
         z_resolution: 0.05
         z_voxels: 16

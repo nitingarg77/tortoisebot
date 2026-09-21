@@ -104,14 +104,21 @@ smoother silently clips commands the planner believes were issued.
 ### 3.4 Sensor mounting
 
 - `imu_link` and `lidar` origins in the xacro files.
-- Cartographer's `tracking_frame = "imu_link"` **asserts** the IMU frame is
-  colocated with the tracking frame within `1e-5` m. Moving the IMU without
-  updating this aborts Cartographer at startup with a colocation assert.
+- Cartographer **asserts** the IMU frame is colocated with `tracking_frame`
+  within `1e-5` m. This stack satisfies it by labelling IMU data `base_link`
+  (`frame_id` in `imu_node.py`, `ignition_frame_id` in the sim) while the chip
+  physically sits at `imu_link`, 0.11 m up, so `tracking_frame` stays
+  `base_link`. That is exact only because `imu_joint` is a pure vertical offset
+  with no rotation and the chip's axes match `base_link` — checked on the robot
+  on 2026-09-21: x forward, y left, z up. **On a new chassis, check both.** A
+  horizontal offset or a rotated chip breaks the relabel; move `tracking_frame`
+  to the IMU frame instead, and expect the offset to appear in `map` → `odom`.
+- Linear acceleration must stay unfused under the relabel; the warning and the
+  revert steps are next to `imu0_config` in `ekf_mapbased.yaml`.
 - `voxel_layer.origin_z: -0.2` in `nav2_params_robot.yaml` is a discard floor.
-  It was lowered from `0.0` because the lidar sits `0.057` m above `base_link`
-  under the current frame choice, leaving only `0.057` m of headroom — a 2°
-  pitch would sink a 2 m return below the floor and silently drop it. The
-  current value gives `0.257` m, roughly 7°.
+  The lidar sits at `0.167` m, so it gives `0.367` m of headroom, roughly 10° at
+  2 m range. It is deliberately left low enough to survive reverting the
+  relabel, which drops the lidar to `0.057` m.
 
 ### 3.5 Sensor rates
 
