@@ -130,17 +130,20 @@ cd ~/tb_ws
 export TORTOISEBOT_TARGET=robot
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --packages-select ydlidar_sdk
+source install/setup.bash
 colcon build --packages-up-to tortoisebot_bringup tortoisebot_control
 source install/setup.bash
 ```
 
 > [!IMPORTANT]
-> Build `ydlidar_sdk` first. The YDLidar SDK is vendored in `YDLidar-SDK/` and
-> builds as the colcon package `ydlidar_sdk`, but `ydlidar_ros2_driver` does not
-> declare it in its `package.xml`. colcon therefore neither builds it first nor
-> includes it in `--packages-up-to`, and the driver fails at `find_package(ydlidar_sdk)`.
-> A plain `colcon build` fails the same way, because the driver sorts ahead of
-> the SDK.
+> Build `ydlidar_sdk` first, then **source `install/setup.bash`** before the
+> main build. The YDLidar SDK is vendored in `YDLidar-SDK/` and builds as the
+> colcon package `ydlidar_sdk`, but `ydlidar_ros2_driver` does not declare it in
+> its `package.xml`. colcon therefore neither builds it first, nor includes it in
+> `--packages-up-to`, nor puts its install prefix on the driver's search path,
+> and the driver fails at `find_package(ydlidar_sdk)`. Sourcing the workspace
+> is what makes the already-built SDK visible. A plain `colcon build` fails the
+> same way, because the driver sorts ahead of the SDK.
 
 > [!IMPORTANT]
 > Forgetting `export TORTOISEBOT_TARGET=robot` on the robot fails **silently**:

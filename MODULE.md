@@ -135,8 +135,9 @@ The robot and simulation driver stacks are selected separately: the lidar, IMU,
 camera and motor drivers are only useful on the Pi, and Ignition is pointless
 there. `ydlidar_ros2_driver` does build on a workstation, but only after
 `ydlidar_sdk` (the vendored `YDLidar-SDK/`), which its `package.xml` does not
-declare. colcon therefore neither orders the SDK first nor includes it in
-`--packages-up-to`, so it has to be built explicitly.
+declare. colcon therefore neither orders the SDK first, nor includes it in
+`--packages-up-to`, nor adds its prefix to the driver's `CMAKE_PREFIX_PATH`, so
+it has to be built explicitly and the workspace sourced before the main build.
 
 `tortoisebot_bringup/package.xml` expresses this with REP-149 conditional
 dependencies keyed on `TORTOISEBOT_TARGET`:
@@ -149,6 +150,7 @@ colcon build --packages-up-to tortoisebot_bringup tortoisebot_control
 export TORTOISEBOT_TARGET=robot
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --packages-select ydlidar_sdk
+source install/setup.bash
 colcon build --packages-up-to tortoisebot_bringup tortoisebot_control
 ```
 
