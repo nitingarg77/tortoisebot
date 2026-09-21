@@ -170,6 +170,18 @@ ros2 launch tortoisebot_bringup autobringup.launch.py \
 Both arguments default to off (`namespace:=''`, `use_namespace:=False`), and
 that path is behaviourally identical to having no namespace support at all.
 
+> [!WARNING]
+> **The namespaced path is verified for a single goal only.** Remapping `/tf` →
+> `tf` on the Nav2 nodes made the controller's `map` → `odom` go stale partway
+> through a run ("Transform data too old") while AMCL was still publishing it at
+> 10 Hz. This happened even with no namespace, where `/tf` and `tf` name the same
+> topic, and it cut a 10-goal simulated course from 10/10 to 1–4/10; one goal
+> still succeeds, which is how it first passed testing. The navigation launch
+> files therefore apply these remaps with `SetRemap` only when
+> `use_namespace:=True`, which restores the default path. The root cause is not
+> yet understood, so expect the namespaced path to fail the same way on longer
+> runs until it is.
+
 ### Frame names are deliberately *not* prefixed
 
 This is the part that surprises people, and an earlier version of this document
@@ -183,8 +195,10 @@ TF_REMAPPINGS = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
 
 `/tf` is an absolute name, so it normally escapes any namespace. Making it
 relative lets `PushRosNamespace` move it to `/robot1/tf`, which gives each robot
-its **own TF tree**. Two robots can then both use `map`, `odom` and `base_link`
-without colliding, because the trees are separate. This is what `nav2_bringup`
+its **own TF tree** (in the Nav2 launches the remaps are applied by a
+conditional `SetRemap` rather than per node; see the warning above). Two robots
+can then both use `map`, `odom` and `base_link` without colliding, because the
+trees are separate. This is what `nav2_bringup`
 does, and it is why the Cartographer `.lua` files and every `global_frame` /
 `robot_base_frame` setting are untouched.
 

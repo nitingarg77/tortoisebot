@@ -6,14 +6,21 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction, GroupAction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
-from launch_ros.actions import Node, PushRosNamespace
+from launch_ros.actions import Node, PushRosNamespace, SetRemap
 from nav2_common.launch import ReplaceString, RewrittenYaml
 
 
 # Relative tf names let PushRosNamespace move TF onto <ns>/tf, giving each
 # robot its own tree. That is why no frame name in the yaml needs a prefix.
-# Every node that publishes or listens to TF needs these; missing them on a
-# single node silently corrupts the tree.
+#
+# They are applied with SetRemap only when use_namespace is true. Applied
+# unconditionally, as a per-node remapping, they broke the default path even
+# though '/tf' and 'tf' resolve to the same topic without a namespace: the
+# controller's map->odom went stale partway through a run ("Transform data too
+# old") while AMCL was still publishing it at 10 Hz. A single goal still
+# succeeded, which is how it got past testing; a 10-goal course reached 1-4/10.
+# The root cause is not yet understood, so the namespaced path is unverified
+# beyond one goal. See MODULE.md section 5.
 TF_REMAPPINGS = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
 
 
@@ -96,7 +103,6 @@ def generate_launch_description():
             'use_sim_time': use_sim_time,
             'yaml_filename': map_yaml,
         }],
-        remappings=TF_REMAPPINGS
     )
 
     amcl = Node(
@@ -115,7 +121,7 @@ def generate_launch_description():
             'initial_pose.cov_y': 0.5,
             'initial_pose.cov_yaw': 0.5,
         }],
-        remappings=TF_REMAPPINGS + [('scan', 'scan')]
+        remappings=[('scan', 'scan')]
     )
 
     planner = Node(
@@ -124,7 +130,6 @@ def generate_launch_description():
         name='planner_server',
         output='screen',
         parameters=[params_file, {'use_sim_time': use_sim_time}],
-        remappings=TF_REMAPPINGS
     )
 
     smoother = Node(
@@ -133,7 +138,6 @@ def generate_launch_description():
         name='smoother_server',
         output='screen',
         parameters=[params_file, {'use_sim_time': use_sim_time}],
-        remappings=TF_REMAPPINGS
     )
 
     controller = Node(
@@ -147,7 +151,7 @@ def generate_launch_description():
         # cmd_vel left the smoother with zero publishers, so nothing was
         # acceleration-limited. behavior_server deliberately keeps publishing
         # to cmd_vel directly, matching upstream nav2.
-        remappings=TF_REMAPPINGS + [('cmd_vel', 'cmd_vel_nav')]
+        remappings=[('cmd_vel', 'cmd_vel_nav')]
     )
 
     behavior = Node(
@@ -156,7 +160,6 @@ def generate_launch_description():
         name='behavior_server',
         output='screen',
         parameters=[params_file, {'use_sim_time': use_sim_time}],
-        remappings=TF_REMAPPINGS
     )
 
     bt_navigator = Node(
@@ -165,7 +168,6 @@ def generate_launch_description():
         name='bt_navigator',
         output='screen',
         parameters=[params_file, {'use_sim_time': use_sim_time}],
-        remappings=TF_REMAPPINGS
     )
 
     waypoint_follower = Node(
@@ -174,7 +176,6 @@ def generate_launch_description():
         name='waypoint_follower',
         output='screen',
         parameters=[params_file, {'use_sim_time': use_sim_time}],
-        remappings=TF_REMAPPINGS
     )
 
     velocity_smoother = Node(
@@ -183,7 +184,7 @@ def generate_launch_description():
         name='velocity_smoother',
         output='screen',
         parameters=[params_file, {'use_sim_time': use_sim_time}],
-        remappings=TF_REMAPPINGS + [
+        remappings=[
             ('cmd_vel',          'cmd_vel_nav'),
             ('cmd_vel_smoothed', 'cmd_vel')
         ]
@@ -247,6 +248,8 @@ def generate_launch_description():
         GroupAction([
             PushRosNamespace(namespace=namespace,
                              condition=IfCondition(use_namespace)),
+            *[SetRemap(src=src, dst=dst, condition=IfCondition(use_namespace))
+              for src, dst in TF_REMAPPINGS],
             map_server,
             amcl,
             planner,
