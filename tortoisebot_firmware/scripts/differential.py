@@ -7,13 +7,15 @@ import RPi.GPIO as GPIO
 import time
 from math import pi
 
-leftEn = 13         #   Purple
-rightEn = 12        #   Red
+# Wire colours are as wired on this robot (taken from the vendor SD card it
+# shipped with, 2026-09-21); the pin numbers are unchanged from upstream.
+leftEn = 13         #   Blue
+rightEn = 12        #   Brown
 
-leftBackward = 5    #   Blue
-leftForward = 6     #   Green
-rightForward = 16   #   Yellow
-rightBackward = 20  #   Orange
+leftBackward = 5    #   Green
+leftForward = 6     #   Yellow
+rightForward = 16   #   Orange
+rightBackward = 20  #   Red
 
 motor_rpm = 60              #   max rpm of motor on full voltage 
 wheel_diameter = 0.065      #   in meters

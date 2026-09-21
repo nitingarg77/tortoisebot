@@ -122,7 +122,8 @@ smoother silently clips commands the planner believes were issued.
 
 ### 3.5 Sensor rates
 
-`ydlidar.yaml frequency: 10.0`; `controller_frequency: 10.0`;
+`ydlidar.yaml frequency: 10.0` (this robot's YDLidar X2 measured 11.5 Hz on
+`/scan`, 2026-09-21); `controller_frequency: 10.0`;
 `smoothing_frequency: 20.0`; IMU `rate_hz: 50.0` (a node parameter, so it can
 be lowered on a slower I2C bus without rebuilding).
 
@@ -130,9 +131,12 @@ be lowered on a slower I2C bus without rebuilding).
 
 ## 4. Build targets
 
-The robot and simulation driver stacks are mutually exclusive. `ydlidar_ros2_driver`
-requires the YDLidar SDK installed system-wide and does not build on a normal
-workstation; Ignition is pointless on the robot.
+The robot and simulation driver stacks are selected separately: the lidar, IMU,
+camera and motor drivers are only useful on the Pi, and Ignition is pointless
+there. `ydlidar_ros2_driver` does build on a workstation, but only after
+`ydlidar_sdk` (the vendored `YDLidar-SDK/`), which its `package.xml` does not
+declare. colcon therefore neither orders the SDK first nor includes it in
+`--packages-up-to`, so it has to be built explicitly.
 
 `tortoisebot_bringup/package.xml` expresses this with REP-149 conditional
 dependencies keyed on `TORTOISEBOT_TARGET`:
@@ -144,6 +148,7 @@ colcon build --packages-up-to tortoisebot_bringup tortoisebot_control
 # Physical robot
 export TORTOISEBOT_TARGET=robot
 rosdep install --from-paths src --ignore-src -r -y
+colcon build --packages-select ydlidar_sdk
 colcon build --packages-up-to tortoisebot_bringup tortoisebot_control
 ```
 

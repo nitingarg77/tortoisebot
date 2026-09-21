@@ -99,15 +99,18 @@ Clone the repository on both your **robot** and your **remote PC**:
 
 ```bash
 mkdir -p ~/tb_ws/src && cd ~/tb_ws/src
-git clone -b ros2-humble https://github.com/rigbetellabs/tortoisebot.git
+git clone -b ros2-humble https://github.com/nitingarg77/tortoisebot.git
 ```
+
+This is a fork of [rigbetellabs/tortoisebot](https://github.com/rigbetellabs/tortoisebot).
+Cloning upstream instead gets none of the IMU, localisation, namespace or build
+fixes described below.
 
 ### 2.2 Build the Workspace
 
-The robot and the simulator need mutually exclusive driver stacks:
-`ydlidar_ros2_driver` needs the YDLidar SDK installed system-wide and will not
-build on an ordinary workstation, while Ignition is pointless on the Pi. Which
-set gets pulled in is selected by the `TORTOISEBOT_TARGET` environment
+The robot and the simulator need different driver stacks: the lidar, IMU,
+camera and motor drivers are only useful on the Pi, and Ignition is pointless
+there. Which set gets pulled in is selected by the `TORTOISEBOT_TARGET` environment
 variable, using REP-149 conditional dependencies in
 `tortoisebot_bringup/package.xml`.
 
@@ -126,9 +129,18 @@ source install/setup.bash
 cd ~/tb_ws
 export TORTOISEBOT_TARGET=robot
 rosdep install --from-paths src --ignore-src -r -y
+colcon build --packages-select ydlidar_sdk
 colcon build --packages-up-to tortoisebot_bringup tortoisebot_control
 source install/setup.bash
 ```
+
+> [!IMPORTANT]
+> Build `ydlidar_sdk` first. The YDLidar SDK is vendored in `YDLidar-SDK/` and
+> builds as the colcon package `ydlidar_sdk`, but `ydlidar_ros2_driver` does not
+> declare it in its `package.xml`. colcon therefore neither builds it first nor
+> includes it in `--packages-up-to`, and the driver fails at `find_package(ydlidar_sdk)`.
+> A plain `colcon build` fails the same way, because the driver sorts ahead of
+> the SDK.
 
 > [!IMPORTANT]
 > Forgetting `export TORTOISEBOT_TARGET=robot` on the robot fails **silently**:
@@ -198,7 +210,7 @@ defaults is byte-for-byte the same as having no namespace support.
 
 | Topic | Rate | Source | Consumed by |
 |---|---|---|---|
-| `/scan` | 10 Hz | YDLidar / Ignition `gpu_lidar` | Cartographer, both costmaps |
+| `/scan` | ~11.5 Hz robot, 10 Hz sim | YDLidar X2 / Ignition `gpu_lidar` | Cartographer, both costmaps |
 | `/imu` | 50 Hz | BNO055 / Ignition `imu_sensor` | Cartographer; EKF in sim |
 | `/odom` | 50 Hz | Ignition DiffDrive — *sim only* | Cartographer, Nav2, EKF |
 | `/odometry/filtered` | 50 Hz | `robot_localization` EKF — *sim only* | TF `odom` → `base_link` |
