@@ -1,0 +1,32 @@
+{"id": "read-01", "utterance": "where are you?", "expect": [{"name": "get_robot_pose", "arguments": {}}]}
+{"id": "read-02", "utterance": "where is the robot right now", "expect": [{"name": "get_robot_pose", "arguments": {}}]}
+{"id": "read-03", "utterance": "what are you doing?", "expect": [{"name": "get_navigation_status", "arguments": {}}]}
+{"id": "read-04", "utterance": "are you still driving somewhere", "expect": [{"name": "get_navigation_status", "arguments": {}}]}
+{"id": "read-05", "utterance": "where can you go?", "expect": [{"name": "list_places", "arguments": {}}]}
+{"id": "read-06", "utterance": "list the places you know", "expect": [{"name": "list_places", "arguments": {}}]}
+{"id": "read-07", "utterance": "how close is the nearest wall", "expect": [{"name": "get_nearest_obstacle", "arguments": {}}]}
+{"id": "read-08", "utterance": "is there anything in front of you", "expect": [{"name": "get_nearest_obstacle", "arguments": {}}]}
+{"id": "tune-01", "utterance": "set your top speed to 0.15", "expect": [{"name": "set_max_speed", "arguments": {"speed": 0.15}}]}
+{"id": "tune-02", "utterance": "slow down to 0.1 metres per second", "expect": [{"name": "set_max_speed", "arguments": {"speed": 0.1}}]}
+{"id": "act-01", "utterance": "go to the kitchen", "expect": [{"name": "go_to_place", "arguments": {"place": "kitchen"}}]}
+{"id": "act-02", "utterance": "drive to the bedroom", "expect": [{"name": "go_to_place", "arguments": {"place": "bedroom"}}]}
+{"id": "act-03", "utterance": "head over to the living room", "expect": [{"name": "go_to_place", "arguments": {"place": "living_room"}}]}
+{"id": "act-04", "utterance": "meet me in the hallway", "expect": [{"name": "go_to_place", "arguments": {"place": "hallway"}}]}
+{"id": "act-05", "utterance": "stop", "expect": [{"name": "stop", "arguments": {}}]}
+{"id": "act-06", "utterance": "stop what you're doing right now", "expect": [{"name": "stop", "arguments": {}}]}
+{"id": "act-07", "utterance": "go home", "expect": [{"name": "go_home", "arguments": {}}]}
+{"id": "act-08", "utterance": "go back to your charger", "expect": [{"name": "go_home", "arguments": {}}]}
+{"id": "act-09", "utterance": "turn left", "expect": [{"name": "turn", "arguments": {"direction": "left"}}]}
+{"id": "act-10", "utterance": "turn right 45 degrees", "expect": [{"name": "turn", "arguments": {"direction": "right", "degrees": 45}}]}
+{"id": "act-11", "utterance": "move forward half a metre", "expect": [{"name": "drive", "arguments": {"direction": "forward", "distance": 0.5}}]}
+{"id": "act-12", "utterance": "back up 1 metre", "expect": [{"name": "drive", "arguments": {"direction": "backward", "distance": 1.0}}]}
+{"id": "multi-01", "utterance": "stop and go home", "expect": [{"name": "stop", "arguments": {}}, {"name": "go_home", "arguments": {}}]}
+{"id": "multi-02", "utterance": "where are you and what are you doing", "expect": [{"name": "get_robot_pose", "arguments": {}}, {"name": "get_navigation_status", "arguments": {}}]}
+{"id": "multi-03", "utterance": "turn left then drive forward 2 metres", "expect": [{"name": "turn", "arguments": {"direction": "left"}}, {"name": "drive", "arguments": {"direction": "forward", "distance": 2.0}}]}
+{"id": "oos-01", "utterance": "go to the garage", "expect": []}
+{"id": "oos-02", "utterance": "pick up the ball", "expect": []}
+{"id": "oos-03", "utterance": "open the door", "expect": []}
+{"id": "oos-04", "utterance": "what's the weather in Lagos", "expect": []}
+{"id": "oos-05", "utterance": "take a photo of the kitchen", "expect": []}
+{"id": "oos-06", "utterance": "make me a new map of the house", "expect": []}
+{"id": "oos-07", "utterance": "climb the stairs", "expect": []}
