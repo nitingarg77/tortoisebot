@@ -9,8 +9,15 @@ the check has to be a long run.
     python3 nav_course.py --laps 2 --timeout 120
     python3 nav_course.py --namespace robot1        # use_namespace:=True
 
-Place coordinates and QoS settings come from spike_needle_nl/tb_tools.py and
-backend.py, both validated against a live stack.
+On a real robot the built-in places mean nothing: they are simulator
+coordinates. Teach it the real ones by pushing or driving the robot to each
+spot, then run the course against that file:
+
+    python3 nav_course.py --record my_room.yaml    # name each spot in turn
+    python3 nav_course.py --places my_room.yaml --laps 1
+
+The default places and the QoS settings come from spike_needle_nl/tb_tools.py
+and backend.py, both validated against a live stack.
 """
 
 import argparse
@@ -18,9 +25,11 @@ import math
 import sys
 import time
 
+import yaml
+
 import rclpy
 from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -36,6 +45,21 @@ PLACES = {
 }
 ORDER = ['kitchen', 'living_room', 'bedroom', 'hallway', 'charging_dock']
 
+
+def load_places(path):
+    """Read {name: [x, y, yaw]} from a YAML file, keeping its order."""
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    places = {}
+    for name, value in data.items():
+        if not (isinstance(value, (list, tuple)) and len(value) == 3):
+            sys.exit(f'{path}: {name} should be [x, y, yaw], got {value!r}')
+        places[name] = tuple(float(v) for v in value)
+    if not places:
+        sys.exit(f'{path}: no places in it')
+    return places, list(places)
+
+
 STATUS = {GoalStatus.STATUS_SUCCEEDED: 'SUCCEEDED',
           GoalStatus.STATUS_ABORTED: 'ABORTED',
           GoalStatus.STATUS_CANCELED: 'CANCELED'}
@@ -43,9 +67,10 @@ STATUS = {GoalStatus.STATUS_SUCCEEDED: 'SUCCEEDED',
 
 class Course(Node):
 
-    def __init__(self, timeout, namespace=''):
+    def __init__(self, timeout=120.0, namespace='', places=None):
         super().__init__('nav_course', namespace=namespace)
         self.timeout = timeout
+        self.places = places or PLACES
         self.pose = None
         self.nav = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         # amcl_pose is TRANSIENT_LOCAL and only published when the estimate
@@ -66,7 +91,7 @@ class Course(Node):
         return done()
 
     def goal_for(self, place):
-        x, y, yaw = PLACES[place]
+        x, y, yaw = self.places[place]
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = 'map'
         goal.pose.header.stamp = self.get_clock().now().to_msg()
@@ -98,8 +123,48 @@ class Course(Node):
     def error(self, place):
         if self.pose is None:
             return None
-        x, y, _ = PLACES[place]
+        x, y, _ = self.places[place]
         return math.hypot(self.pose.position.x - x, self.pose.position.y - y)
+
+    def current(self):
+        """Where the robot thinks it is: (x, y, yaw), or None."""
+        if self.pose is None:
+            return None
+        q = self.pose.orientation
+        yaw = math.atan2(2 * (q.w * q.z + q.x * q.y),
+                         1 - 2 * (q.y ** 2 + q.z ** 2))
+        return self.pose.position.x, self.pose.position.y, yaw
+
+
+def record(node, path):
+    """Teach the course real coordinates: drive the robot to each spot and
+    name it. Nav2 need not be running, but AMCL must be, since the positions
+    come from /amcl_pose."""
+    places = {}
+    print(f'Recording places into {path}.')
+    print('Drive or push the robot to a spot, type a name, press Enter.')
+    print('Press Enter on an empty name when done.\n')
+    while True:
+        try:
+            name = input('name for this spot (empty to finish): ').strip()
+        except EOFError:
+            break
+        if not name:
+            break
+        node.spin_until(lambda: False, 0.5)   # take the latest pose
+        here = node.current()
+        if here is None:
+            print('  no /amcl_pose yet: is AMCL running and localised?')
+            continue
+        places[name] = [round(v, 3) for v in here]
+        print(f'  {name}: x={here[0]:.2f} y={here[1]:.2f} yaw={here[2]:.2f}')
+    if not places:
+        print('nothing recorded')
+        return
+    with open(path, 'w') as f:
+        yaml.safe_dump(places, f, sort_keys=False, default_flow_style=None)
+    print(f'\nwrote {len(places)} places to {path}')
+    print(f'run the course with:  python3 nav_course.py --places {path}')
 
 
 def main():
@@ -110,10 +175,28 @@ def main():
     ap.add_argument('--namespace', default='',
                     help='robot namespace, e.g. robot1, when the stack was '
                          'launched with use_namespace:=True')
+    ap.add_argument('--places', metavar='FILE',
+                    help='YAML of {name: [x, y, yaw]}; the default places are '
+                         'simulator coordinates and are wrong on a real robot')
+    ap.add_argument('--record', metavar='FILE',
+                    help='drive the robot around and write its positions to '
+                         'FILE instead of running a course')
     args = ap.parse_args()
 
+    places, order = (load_places(args.places) if args.places
+                     else (PLACES, ORDER))
+
     rclpy.init()
-    node = Course(args.timeout, args.namespace)
+    node = Course(args.timeout, args.namespace, places)
+
+    if args.record:
+        if not node.spin_until(lambda: node.pose is not None, 30.0):
+            sys.exit('no /amcl_pose: start navigation and localise first')
+        record(node, args.record)
+        node.destroy_node()
+        rclpy.shutdown()
+        return
+
     print('waiting for navigate_to_pose...', flush=True)
     if not node.nav.wait_for_server(timeout_sec=60.0):
         sys.exit('no navigate_to_pose action server: is Nav2 up?')
@@ -122,7 +205,7 @@ def main():
 
     rows = []
     for lap in range(args.laps):
-        for place in ORDER:
+        for place in order:
             n = len(rows) + 1
             print(f'[{n:2}] -> {place} ...', end=' ', flush=True)
             status, secs, err = node.run_goal(place)
