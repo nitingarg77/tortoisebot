@@ -7,6 +7,7 @@ nodes made map->odom go stale partway through a run and cut this course from
 the check has to be a long run.
 
     python3 nav_course.py --laps 2 --timeout 120
+    python3 nav_course.py --namespace robot1        # use_namespace:=True
 
 Place coordinates and QoS settings come from spike_needle_nl/tb_tools.py and
 backend.py, both validated against a live stack.
@@ -42,8 +43,8 @@ STATUS = {GoalStatus.STATUS_SUCCEEDED: 'SUCCEEDED',
 
 class Course(Node):
 
-    def __init__(self, timeout):
-        super().__init__('nav_course')
+    def __init__(self, timeout, namespace=''):
+        super().__init__('nav_course', namespace=namespace)
         self.timeout = timeout
         self.pose = None
         self.nav = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -106,10 +107,13 @@ def main():
     ap.add_argument('--laps', type=int, default=2)
     ap.add_argument('--timeout', type=float, default=120.0,
                     help='seconds allowed per goal')
+    ap.add_argument('--namespace', default='',
+                    help='robot namespace, e.g. robot1, when the stack was '
+                         'launched with use_namespace:=True')
     args = ap.parse_args()
 
     rclpy.init()
-    node = Course(args.timeout)
+    node = Course(args.timeout, args.namespace)
     print('waiting for navigate_to_pose...', flush=True)
     if not node.nav.wait_for_server(timeout_sec=60.0):
         sys.exit('no navigate_to_pose action server: is Nav2 up?')

@@ -192,13 +192,27 @@ that path is behaviourally identical to having no namespace support at all.
 > topic, and it cut a 10-goal simulated course from 10/10 to 1–4/10; one goal
 > still succeeds, which is how it first passed testing. The navigation launch
 > files therefore apply these remaps with `SetRemap` only when
-> `use_namespace:=True`, which restores the default path. That default path was
-> re-checked on 2026-09-24 with
-> `tortoisebot_navigation/scripts/nav_course.py --laps 2`: **10/10 goals, worst
-> error 0.12 m, and no "Transform data too old" or "jump back in time" in the
-> Nav2 log**. The root cause is not
-> yet understood, so expect the namespaced path to fail the same way on longer
-> runs until it is.
+> `use_namespace:=True`, which restores the default path.
+>
+> **Both paths passed a 10-goal course on 2026-09-24**, run with
+> `tortoisebot_navigation/scripts/nav_course.py --laps 2` against a headless
+> Ignition + Nav2 stack on an isolated `ROS_DOMAIN_ID`:
+>
+> | Path | Result | Worst error | TF staleness in the log |
+> |---|---|---|---|
+> | default (no namespace, no remaps) | 10/10 | 0.12 m | none |
+> | `use_namespace:=True` (remaps applied) | 10/10 | 0.28 m | none |
+>
+> So the namespaced path did **not** reproduce the failure, and the prediction
+> that it would is withdrawn. The likeliest explanation is that the original
+> 1-4/10 runs hit the two-`/clock`-publishers artifact described in
+> `spike_needle_nl/RESULTS.md`, where a leftover second simulator made
+> simulated time run backwards and cleared every TF buffer; that is the same
+> symptom by a different cause. This is not proof: the decisive experiment is
+> to apply the remaps unconditionally again and see whether a 10-goal course
+> still fails on a verified single-`/clock` stack. Until someone runs it,
+> `dc8b7cc` stays as it is, and the reason for making the remaps conditional
+> is unconfirmed rather than wrong.
 
 ### Frame names are deliberately *not* prefixed
 
