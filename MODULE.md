@@ -192,7 +192,11 @@ that path is behaviourally identical to having no namespace support at all.
 > topic, and it cut a 10-goal simulated course from 10/10 to 1–4/10; one goal
 > still succeeds, which is how it first passed testing. The navigation launch
 > files therefore apply these remaps with `SetRemap` only when
-> `use_namespace:=True`, which restores the default path. The root cause is not
+> `use_namespace:=True`, which restores the default path. That default path was
+> re-checked on 2026-09-24 with
+> `tortoisebot_navigation/scripts/nav_course.py --laps 2`: **10/10 goals, worst
+> error 0.12 m, and no "Transform data too old" or "jump back in time" in the
+> Nav2 log**. The root cause is not
 > yet understood, so expect the namespaced path to fail the same way on longer
 > runs until it is.
 
