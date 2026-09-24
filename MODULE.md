@@ -203,16 +203,24 @@ that path is behaviourally identical to having no namespace support at all.
 > | default (no namespace, no remaps) | 10/10 | 0.12 m | none |
 > | `use_namespace:=True` (remaps applied) | 10/10 | 0.28 m | none |
 >
-> So the namespaced path did **not** reproduce the failure, and the prediction
-> that it would is withdrawn. The likeliest explanation is that the original
-> 1-4/10 runs hit the two-`/clock`-publishers artifact described in
-> `spike_needle_nl/RESULTS.md`, where a leftover second simulator made
-> simulated time run backwards and cleared every TF buffer; that is the same
-> symptom by a different cause. This is not proof: the decisive experiment is
-> to apply the remaps unconditionally again and see whether a 10-goal course
-> still fails on a verified single-`/clock` stack. Until someone runs it,
-> `dc8b7cc` stays as it is, and the reason for making the remaps conditional
-> is unconfirmed rather than wrong.
+> The decisive experiment was then run: the remaps were made **unconditional
+> again**, exactly as in `ddac963`, with no namespace and a verified single
+> `/clock` publisher. That course also passed **10/10, worst error 0.13 m, no
+> TF staleness**.
+>
+> **The remaps are therefore not the cause.** The failure could not be
+> reproduced in any of the three configurations. The likeliest explanation of
+> the original 1-4/10 runs is the two-`/clock`-publishers artifact described in
+> `spike_needle_nl/RESULTS.md`: a leftover second simulator makes simulated
+> time run backwards and clears every TF buffer, which produces exactly this
+> symptom from an unrelated cause. That the same workspace was being used to
+> debug two sim stacks at the time fits.
+>
+> `dc8b7cc` stays, because without a namespace `/tf` and `tf` name the same
+> topic and the conditional form is a no-op there, so it costs nothing. But it
+> should not be read as a fix for a known defect: on this evidence there was no
+> defect in the remaps. Three runs of ten goals each, one per configuration,
+> all on 2026-09-24.
 
 ### Frame names are deliberately *not* prefixed
 
