@@ -24,6 +24,9 @@
   <exec_depend>tortoisebot_description</exec_depend>
   <exec_depend>tortoisebot_navigation</exec_depend>
   <exec_depend>tortoisebot_slam</exec_depend>
+  <!-- Frontier explorer started by autobringup in exploration mode. Not
+       released for Humble, so it is built from source in the workspace. -->
+  <exec_depend>frontier_exploration_ros2</exec_depend>
 
   <!-- autobringup.launch.py drives either a simulator or a physical robot,
        and the two need mutually exclusive driver stacks. Declaring both

@@ -36,12 +36,17 @@ def generate_launch_description():
     lidar_params    = PathJoinSubstitution([lidar_pkg, 'params', 'ydlidar.yaml'])
     real_urdf       = os.path.join(desc_pkg, 'models', 'urdf', 'tortoisebotreal.xacro')
     ekf_slam_params = os.path.join(slam_pkg, 'config', 'ekf.yaml')
+    explore_params  = os.path.join(nav_pkg,  'config', 'explore_params_robot.yaml')
 
     use_sim_time = LaunchConfiguration('use_sim_time')
     exploration  = LaunchConfiguration('exploration')
     slam_only    = LaunchConfiguration('slam_only')
+    auto_explore = LaunchConfiguration('auto_explore')
     map_file     = LaunchConfiguration('map_file')
     camera_port  = LaunchConfiguration('camera_port')
+    use_camera   = LaunchConfiguration('camera')
+    stack        = LaunchConfiguration('stack')
+    use_rviz     = LaunchConfiguration('rviz')
     namespace     = LaunchConfiguration('namespace')
     use_namespace = LaunchConfiguration('use_namespace')
 
@@ -114,7 +119,11 @@ def generate_launch_description():
             {'width': 800},
             {'height': 600}
         ],
-        condition=UnlessCondition(use_sim_time)
+        # Real robot only, and optional: at 800x600 RGB888 the camera costs a
+        # Pi 4 about 20% CPU that exploration does not use (camera:=False).
+        condition=IfCondition(PythonExpression([
+            "'true' if ('", use_sim_time, "' == 'false' or '", use_sim_time, "' == 'False') and ('", use_camera, "' == 'true' or '", use_camera, "' == 'True') else 'false'"
+        ]))
     )
 
     # EKF node — disabled (not used in any pipeline)
@@ -175,6 +184,48 @@ def generate_launch_description():
         )]
     )
 
+    # Frontier explorer, alongside Nav2 in exploration mode. It always starts,
+    # but only drives off on its own with auto_explore:=True; otherwise it
+    # idles until started from its RViz panel or control_exploration service.
+    # Launched after navigation_slam (20 s) so Nav2's action server is up.
+    explorer = TimerAction(
+        period=30.0,
+        actions=[GroupAction([
+            PushRosNamespace(namespace=namespace,
+                             condition=IfCondition(use_namespace)),
+            Node(
+                package='frontier_exploration_ros2',
+                executable='frontier_explorer',
+                name='frontier_explorer',
+                output='screen',
+                parameters=[explore_params, {
+                    'use_sim_time': use_sim_time,
+                    'autostart':    auto_explore,
+                }],
+            ),
+        ])],
+        condition=IfCondition(PythonExpression([
+            "'true' if ('", exploration, "' == 'true' or '", exploration, "' == 'True') and ('", slam_only, "' == 'false' or '", slam_only, "' == 'False') else 'false'"
+        ]))
+    )
+
+    # Stops the explorer and cancels Nav2 goals if the SLAM pose runs away
+    # (see pose_watchdog.py). Same condition as Nav2: nothing to cancel without
+    # it, and in slam_only mode its zero cmd_vel would only fight teleop.
+    pose_watchdog = GroupAction([
+        PushRosNamespace(namespace=namespace,
+                         condition=IfCondition(use_namespace)),
+        Node(
+            package='tortoisebot_navigation',
+            executable='pose_watchdog.py',
+            name='pose_watchdog',
+            output='screen',
+            parameters=[{'use_sim_time': use_sim_time}],
+        ),
+    ], condition=IfCondition(PythonExpression([
+        "'true' if ('", exploration, "' == 'true' or '", exploration, "' == 'True') and ('", slam_only, "' == 'false' or '", slam_only, "' == 'False') else 'false'"
+    ])))
+
     rviz = TimerAction(
         period=8.0,
         actions=[IncludeLaunchDescription(
@@ -231,8 +282,17 @@ def generate_launch_description():
                               description='True=SLAM mapping, False=Map-based Nav'),
         DeclareLaunchArgument('slam_only',     default_value='False',
                               description='True=SLAM-only mapping (Cartographer, no Nav2), False=Standard mapping (SLAM + Nav2)'),
+        DeclareLaunchArgument('auto_explore', default_value='False',
+                              description='True=frontier explorer drives off as soon as it starts, False=it waits for the RViz panel (exploration mode only)'),
         DeclareLaunchArgument('map_file',     default_value=default_map,
                               description='Path to saved map yaml (used when exploration=False)'),
+        DeclareLaunchArgument('stack',        default_value='all',
+                              choices=['all', 'robot', 'compute'],
+                              description='all=everything here, robot=drivers only, compute=SLAM, Nav2, explorer and watchdog only'),
+        DeclareLaunchArgument('rviz',         default_value='True',
+                              description='Start RViz (compute side only)'),
+        DeclareLaunchArgument('camera',       default_value='True',
+                              description='Start the camera on the real robot (False saves ~20% CPU on the Pi)'),
         DeclareLaunchArgument('camera_port',  default_value='0',
                               description='Camera port (e.g. 0 for /dev/video0, or /base/soc/...)'),
         DeclareLaunchArgument('namespace',     default_value='',
@@ -241,27 +301,41 @@ def generate_launch_description():
                               description='Whether to push the whole stack into "namespace"'),
 
 
-        ignition_sim,
-        state_publisher,
-
-        # The robot-only drivers are grouped rather than sent namespace
-        # arguments, because ydlidar_launch.py is third-party and does not
-        # declare them; passing an undeclared argument to an included launch
-        # file is an error. PushRosNamespace applies to included files too, so
-        # the group achieves the same thing without touching vendor code.
+        # stack:=robot runs only what needs the hardware; stack:=compute runs
+        # SLAM, Nav2, the explorer and the watchdog, e.g. on a desktop on the
+        # same network when the Pi 4 cannot keep up. stack:=all (default) runs
+        # everything in one place, as before.
         GroupAction([
-            PushRosNamespace(namespace=namespace,
-                             condition=IfCondition(use_namespace)),
-            lidar,
-            imu,
-            motors,
-            camera,
-        ]),
+            ignition_sim,
+            state_publisher,
 
-        cartographer,
-        navigation,
-        navigation_slam,
-        rviz,
-        rviz_slam,
-        rviz_map,
+            # The robot-only drivers are grouped rather than sent namespace
+            # arguments, because ydlidar_launch.py is third-party and does not
+            # declare them; passing an undeclared argument to an included launch
+            # file is an error. PushRosNamespace applies to included files too, so
+            # the group achieves the same thing without touching vendor code.
+            GroupAction([
+                PushRosNamespace(namespace=namespace,
+                                 condition=IfCondition(use_namespace)),
+                lidar,
+                imu,
+                motors,
+                camera,
+            ]),
+        ], condition=IfCondition(PythonExpression(["'", stack, "' in ('all', 'robot')"]))),
+
+        GroupAction([
+            cartographer,
+            navigation,
+            navigation_slam,
+            explorer,
+            pose_watchdog,
+        ], condition=IfCondition(PythonExpression(["'", stack, "' in ('all', 'compute')"]))),
+
+        GroupAction([
+            rviz,
+            rviz_slam,
+            rviz_map,
+        ], condition=IfCondition(PythonExpression([
+            "'", use_rviz, "'.lower() == 'true' and '", stack, "' in ('all', 'compute')"]))),
     ])

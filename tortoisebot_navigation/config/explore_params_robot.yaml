@@ -1,0 +1,49 @@
+# frontier_exploration_ros2 on the real TortoiseBot.
+#
+# Only values that differ from the node's own defaults are set here; see
+# frontier_exploration_ros2/config/params.yaml for the full list. Topics stay
+# at the node's relative defaults (map, global_costmap/costmap, ...) so the
+# explorer follows the robot's namespace like the rest of the stack.
+frontier_explorer:
+  ros__parameters:
+
+    # The TortoiseBot URDF has no base_footprint; Nav2 uses base_link too.
+    robot_base_frame: base_link
+
+    # Started from autobringup, which decides whether it drives off at once
+    # (auto_explore:=True) or waits for the RViz panel / control service.
+    control_service_enabled: true
+
+    # Mirror controller_server's limits in nav2_params_robot.yaml. These only
+    # feed the MRTSP time estimate; they do not command the robot.
+    max_linear_speed_vmax: 0.15
+    max_angular_speed_wmax: 1.5
+
+    # The upstream defaults (0.8 m) are 2.5x a TurtleBot3's radius. The
+    # TortoiseBot's robot_radius is 0.1 m, but its costmaps inflate to
+    # 0.5-0.55 m, so a frontier much closer than that is rarely reachable.
+    frontier_selection_min_distance: 0.5
+    frontier_candidate_min_goal_distance_m: 0.5
+
+    # YDLidar on the robot: 12 m range, 360 degrees, matching the upstream
+    # defaults. Stated here so a lidar swap has one obvious place to change.
+    goal_preemption_lidar_range_m: 12.0
+    goal_preemption_lidar_fov_deg: 360.0
+
+    # Cartographer publishes /map at 1 Hz and the robot tops out at 0.15 m/s,
+    # so let the map catch up after each goal before choosing the next one.
+    post_goal_settle_enabled: true
+    post_goal_min_settle: 1.5
+
+    # Back off frontiers that keep failing (glass, cables, dark floor that
+    # the lidar misreads) instead of retrying them forever.
+    frontier_suppression_enabled: true
+
+    # CPU budget. With Cartographer and Nav2 on the same Pi 4, the upstream
+    # defaults (1 Hz map processing, bounded-horizon DP ordering, visible-gain
+    # preemption) cost the explorer ~28% CPU and helped starve Nav2 into
+    # timing out every goal. Cartographer publishes /map at 1 Hz and the robot
+    # moves at 0.15 m/s, so a 2 s refresh loses little.
+    map_processing_rate_hz: 0.5
+    mrtsp_solver: greedy
+    goal_preemption_enabled: false
