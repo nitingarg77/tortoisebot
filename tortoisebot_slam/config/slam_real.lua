@@ -63,16 +63,28 @@ TRAJECTORY_BUILDER_2D.missing_data_ray_length = 8.5
 -- extrapolation from the IMU are what keep scan matching stable while turning.
 TRAJECTORY_BUILDER_2D.use_imu_data = true
 TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = true
-TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.1
+-- 0.3 m, up from 0.1. With no wheel odometry the only motion prior is the
+-- extrapolator's velocity estimate, and on a loaded Pi 4 scans are processed
+-- late: at 0.15 m/s a scan more than ~0.7 s old had already left a 0.1 m
+-- window, the match failed, and the bad velocity it left behind ran
+-- odom->base_link away at constant speed to -559 m (2026-09-25 test).
+TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.3
 TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.translation_delta_cost_weight = 10.
 TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.rotation_delta_cost_weight = 1e-1
-TRAJECTORY_BUILDER_2D.motion_filter.max_angle_radians = math.rad(0.2)
+-- Insert a scan only after 1 deg, 5 cm or 1 s of change, up from 0.2 deg alone.
+-- The old filter inserted nearly every scan (35 submaps in 5 min) and the
+-- extra nodes are what loaded the Pi once the robot started moving.
+TRAJECTORY_BUILDER_2D.motion_filter.max_angle_radians = math.rad(1.)
+TRAJECTORY_BUILDER_2D.motion_filter.max_distance_meters = 0.05
+TRAJECTORY_BUILDER_2D.motion_filter.max_time_seconds = 1.
 -- for current lidar only 1 is good value
 TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 1
 
 POSE_GRAPH.constraint_builder.min_score = 0.65
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.65
 POSE_GRAPH.optimization_problem.huber_scale = 1e2
-POSE_GRAPH.optimize_every_n_nodes = 35
+-- Global optimisation is the Pi's biggest CPU spike; run it less often now
+-- that the motion filter produces fewer nodes.
+POSE_GRAPH.optimize_every_n_nodes = 90
 
 return options
