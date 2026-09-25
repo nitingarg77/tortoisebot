@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import rclpy 
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Int32, Bool
@@ -112,8 +113,32 @@ class Differential(Node):
         self.ldir_pub = self.create_publisher(Bool, 'ldir', 10)
         self.rdir_pub = self.create_publisher(Bool, 'rdir', 10)
 
+        # Stop the motors if cmd_vel goes quiet. The PWM is open loop and holds
+        # the last duty cycle indefinitely, so without this a Wi-Fi drop, a
+        # crashed controller or a closed teleop left the robot driving on its
+        # own. Nav2 publishes at its controller rate (10 Hz); keyboard teleop
+        # only publishes while a key is held, relying on key auto-repeat, so
+        # the timeout stays above the usual ~0.5 s repeat delay. 0 disables.
+        self.cmd_vel_timeout = float(
+            self.declare_parameter('cmd_vel_timeout', 1.0).value)
+        self.last_cmd_time = None
+        if self.cmd_vel_timeout > 0.0:
+            self.create_timer(0.1, self.check_cmd_vel_timeout)
+
+    def check_cmd_vel_timeout(self):
+        if self.last_cmd_time is None:
+            return
+        age = (self.get_clock().now() - self.last_cmd_time).nanoseconds * 1e-9
+        if age > self.cmd_vel_timeout:
+            self.get_logger().warn(
+                f'no cmd_vel for {age:.1f} s, stopping motors',
+                throttle_duration_sec=5.0)
+            stop(self)
+            self.last_cmd_time = None
+
     def callback(self, data):
-        
+        self.last_cmd_time = self.get_clock().now()
+
         global wheel_radius
         global wheel_separation
         
@@ -134,9 +159,21 @@ class Differential(Node):
 def main(args=None):
     rclpy.init(args=args)
     differential_drive = Differential()
-    rclpy.spin(differential_drive)
-    differential_drive.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(differential_drive)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        # RPi.GPIO's PWM is a software thread in this process: exiting with
+        # an enable pin mid-cycle can leave it latched high, i.e. full speed.
+        # Zero the duty cycle and release the pins on every way out.
+        pwmL.ChangeDutyCycle(0)
+        pwmR.ChangeDutyCycle(0)
+        pwmL.stop()
+        pwmR.stop()
+        GPIO.cleanup()
+        differential_drive.destroy_node()
+        rclpy.try_shutdown()
    
 if __name__ == '__main__':
     print('Tortoisebot Differential Drive Initialized with following Params-')
