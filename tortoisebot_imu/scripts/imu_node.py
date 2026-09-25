@@ -57,6 +57,18 @@ class ImuPublisher(Node):
         accel_sigma = float(self.declare_parameter(
             'linear_acceleration_stddev', 0.20).value)               # m/s^2
 
+        # Plausibility limits on the raw vectors. A corrupted I2C read can pass
+        # the quaternion check yet carry garbage acceleration -- 318 m/s^2
+        # (32 g, beyond the chip's own 4 g range) was seen on a stationary
+        # robot -- and Cartographer, with no wheel odometry to contradict it,
+        # integrated such samples into a 240 m jump in odom->base_link. The
+        # robot tops out at 0.15 m/s and 1.5 rad/s, so 2 g (gravity plus
+        # bumps) and 500 deg/s leave wide margin for anything real.
+        self.max_accel_norm = float(self.declare_parameter(
+            'max_accel_norm', 19.6).value)                           # m/s^2
+        self.max_gyro_norm = float(self.declare_parameter(
+            'max_gyro_norm', 8.7).value)                             # rad/s
+
         # Raw BNO055 calibration offset registers, captured from this unit.
         # Units are register LSBs -- accel 1/100 m/s^2, gyro 1/16 deg/s,
         # mag 1/16 uT -- which is what the offset registers expect. They are
@@ -147,6 +159,15 @@ class ImuPublisher(Node):
         if abs(norm - 1.0) > 0.1:
             self.get_logger().warn(
                 f'BNO055 returned a non-unit quaternion (norm {norm:.3f}), '
+                'skipping sample', throttle_duration_sec=5.0)
+            return
+
+        accel_norm = math.sqrt(sum(float(c) ** 2 for c in accel))
+        gyro_norm = math.sqrt(sum(float(c) ** 2 for c in gyro))
+        if accel_norm > self.max_accel_norm or gyro_norm > self.max_gyro_norm:
+            self.get_logger().warn(
+                f'BNO055 returned an implausible reading (|accel| '
+                f'{accel_norm:.1f} m/s^2, |gyro| {gyro_norm:.2f} rad/s), '
                 'skipping sample', throttle_duration_sec=5.0)
             return
 
