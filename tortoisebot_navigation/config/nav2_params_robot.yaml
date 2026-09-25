@@ -60,9 +60,14 @@ bt_navigator:
     robot_base_frame: base_link
     odom_topic: odom
     default_bt_xml_filename: "navigate_w_replanning_and_recovery.xml"
-    bt_loop_duration: 10
+    # 20 ms, up from 10. On a Pi 4 alongside Cartographer the 100 Hz tick was
+    # overrun hundreds of times a run; 50 Hz is still far above what a
+    # 0.15 m/s robot needs.
+    bt_loop_duration: 20
     default_server_timeout: 20
-    enable_groot_monitoring: True
+    # Groot's ZMQ publisher costs CPU on every tick; turn on only to debug
+    # the behaviour tree.
+    enable_groot_monitoring: False
     groot_zmq_publisher_port: 1666
     groot_zmq_server_port: 1667
     plugin_lib_names:
@@ -115,8 +120,13 @@ controller_server:
     controller_plugins: ["FollowPath"]
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.5
-      movement_time_allowance: 10.0
+      # 0.25 m in 20 s, down from 0.5 m in 10 s. The motors are open loop
+      # with no encoders: real speed is well below the commanded 0.15 m/s
+      # (0.04 m/s average while exploring, 2026-09-25), and turning in place
+      # covers no distance at all, so the stricter check abandoned 11 of 12
+      # frontier goals as "Failed to make progress".
+      required_movement_radius: 0.25
+      movement_time_allowance: 20.0
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
@@ -124,7 +134,8 @@ controller_server:
       yaw_goal_tolerance: 0.25
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
-      debug_trajectory_details: True
+      # Publishing every simulated trajectory is a debugging aid, not free.
+      debug_trajectory_details: False
       min_vel_x: 0.0
       min_vel_y: 0.0
       max_vel_x: 0.15
@@ -139,9 +150,13 @@ controller_server:
       decel_lim_x: -1.0
       decel_lim_y: 0.0
       decel_lim_theta: -1.5
-      vx_samples: 20
+      # 10 x 20 = 200 trajectories per cycle, down from 20 x 100 = 2000 --
+      # the biggest single CPU cost on the Pi. At max_vel_x 0.15 the linear
+      # steps are still 1.5 cm, and 20 angular samples over +-1.5 rad/s are
+      # 0.15 rad/s apart.
+      vx_samples: 10
       vy_samples: 0
-      vtheta_samples: 100
+      vtheta_samples: 20
       sim_time: 1.5
       linear_granularity: 0.05
       angular_granularity: 0.025
@@ -169,8 +184,10 @@ controller_server_rclcpp_node:
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 10.0
-      publish_frequency: 10.0
+      # 5 Hz update / 2 Hz publish, down from 10 / 10. At 0.15 m/s the robot
+      # moves 3 cm between updates; the publish rate only feeds RViz.
+      update_frequency: 5.0
+      publish_frequency: 2.0
       transform_tolerance: 1.0
       global_frame: odom
       robot_base_frame: base_link
