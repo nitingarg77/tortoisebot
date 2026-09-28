@@ -6,9 +6,31 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, and a global costmap that discarded Cartographer's walls
+## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, a global costmap that discarded Cartographer's walls, and a drivetrain that curves under a straight command
 
 ### Faults found, and what was done
+
+**Commanded straight, the robot curves, and a stopped wheel still ran at 15%
+duty** (`3356eb2`). Measured with the IMU over a 2.66 m run: 55° of heading
+change, about 20 deg/m, roughly 6% more speed on one wheel than the other; it
+curves left going forward and right in reverse, one fault seen from both
+directions. That is enough to walk the robot into whatever is on its left
+over a few metres, and is the likely reason it kept clipping wall panels,
+wedged itself in a doorway, and failed nearly every Nav2 goal with "Failed to
+make progress": the controller computes a path the robot cannot drive. There
+are no encoders, so nothing notices. `left_trim` and `right_trim` are now the
+only correction available, both defaulting to 1.0 so this commit alone
+changes nothing until they are set; the calibration procedure is in the code
+comment. Separately, `min_pwm_val` was applied to every wheel including one
+asked for zero, so a stopped wheel still ran at 15% duty and the robot could
+not hold a wheel still or drive a gentle arc — a floor on the duty cycle only
+means anything once the wheel is meant to turn. The new `duty_for()` returns
+0.0 for a wheel commanded to exactly 0.0 and is otherwise identical to the old
+formula, checked at every speed from 0.01 to 0.30 m/s. `min_pwm` is now a
+parameter too, left at 15: the IMU says 0.6 rad/s (25% duty) does not move the
+robot at all while 1.0 rad/s (42%) gives 1.19 rad/s actual, so the real
+stiction threshold sits between 25% and 42% and 15 never reached it — raising
+it changes low-speed behaviour and wants its own measurement.
 
 **White fluted wall panels are invisible to the lidar** (`6703944`). Measured
 on the robot facing a panel at 1.2 m: the beams straight ahead returned
@@ -155,6 +177,13 @@ the robot: the run in progress at the time was still on the old setting.
 - **The global costmap's new `lethal_cost_threshold`/`trinary_costmap`
   setting (`2f03153`) is not yet verified on the robot** — the run in
   progress when it was made was still on the old setting.
+- **`left_trim`/`right_trim` (`3356eb2`) are not yet calibrated** — both are
+  still at their default of 1.0, so the 55°/2.66 m curve is uncorrected until
+  the procedure in the code comment is run on the robot.
+- **`min_pwm`'s real stiction threshold (`3356eb2`) is unmeasured** — it sits
+  somewhere between 25% duty (0.6 rad/s commanded, no rotation) and 42%
+  (1.0 rad/s commanded, 1.19 rad/s actual); `min_pwm` is left at the
+  inherited 15 pending that measurement.
 
 ## 2026-09-25 — second machine, frontier exploration, and a Pi that cannot keep up
 
