@@ -71,6 +71,25 @@ the `tf2_ros::MessageFilter` count on `Costmap2DROS`, from two filters to four
 because the global costmap lists both sources under two layers — is a
 hypothesis, and the A/B is one run each.
 
+**The global costmap's voxel layer duplicated `obstacle_layer` and could not
+keep up on the real robot** (`681766f`). It listed `obstacle_layer` and
+`voxel_layer` with identical observation sources, ranges and clearing
+settings; a single-plane lidar gives a voxel layer no vertical information,
+so it marked the same cells the obstacle layer already had, across 16
+z-levels, and published a voxel grid nothing subscribes to. The local
+costmap never had it. On the real robot the global costmap could not keep
+up: planner_server ran at 1.6-5 Hz against its 20 Hz target, so the
+behaviour tree's compute_path_to_pose call timed out and FollowPath was
+handed an empty path — "Resulting plan has 0 poses in it", 763 times in one
+run. Every goal aborted, recovery cleared the whole costmap, and the next
+rebuild was slower still; eight goals in a row failed and none succeeded
+while the robot drifted on recovery spins. The voxel layer's discarded-below
+`origin_z = -0.2` carries over as `obstacle_layer`'s `min_obstacle_height`,
+kept for the reason it was there before: nothing should arrive below zero on
+a planar scan, but the margin is what stops a change to Cartographer's
+tracking_frame from silently dropping scans. Map from the run this replaces
+is saved on the robot as `~/maps/site_map_2035`.
+
 ### Added
 
 - **floor_scan** (`6703944`, `tortoisebot_navigation/scripts/floor_scan.py`):
