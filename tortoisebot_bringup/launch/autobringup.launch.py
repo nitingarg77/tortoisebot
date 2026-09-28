@@ -118,11 +118,6 @@ def generate_launch_description():
             {'format': 'RGB888'},
             {'width': 640},
             {'height': 480},
-            # floor_scan compares brightness against thresholds tuned on the
-            # real floor, so the camera must not rebrighten the picture when
-            # something enters the view.
-            {'AeEnable': False},
-            {'AwbEnable': False},
         ],
         # Real robot only, and optional: at 800x600 RGB888 the camera costs a
         # Pi 4 about 20% CPU that exploration does not use (camera:=False).

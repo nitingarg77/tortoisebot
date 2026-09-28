@@ -118,9 +118,16 @@ class FloorScan(Node):
         img = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         h, w = img.shape[:2]
         gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+        # Scale to a fixed median brightness first. The camera's auto exposure
+        # changes the picture's level whenever the view changes, and an
+        # absolute edge threshold would then mean something different every
+        # frame. (Disabling auto exposure at startup is not the answer: the
+        # camera then never exposes at all and the image comes out black.)
+        median = float(np.median(gray))
+        gray = np.clip(gray.astype(np.float32) * (128.0 / max(median, 1.0)), 0, 255)
         # Horizontal edges: a floor/wall junction is a step in brightness down
         # the column, whatever the colours are.
-        edge = np.abs(cv2.Sobel(gray.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3))
+        edge = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3))
 
         # Only look below the horizon; above it there is no floor to see.
         fy = (h / 2) / math.tan(self.vfov / 2)
