@@ -28,6 +28,14 @@ never saw the wall, and the robot drove into it during exploration.
   first and rejected: the panel is the same white as the glossy floor, which
   mirrors it, so the mask was unusable; a vertical brightness gradient finds
   the junction regardless of colour.
+- **Tuned against a sweep on the real floor** (`0f6504a`): `edge_threshold`
+  raised from 18 to 45. 18 fired on the marble floor's veining (61 false
+  detections in 180 beams), 30 still fired 10 times, 45 fired none while
+  keeping 177/180 real detections, and 60 started missing the junction
+  itself. Columns that disagree with their neighbours by more than 12 rows
+  (`neighbour_tolerance_rows`) are now dropped as outliers. The same sweep
+  refined the camera tilt from 4.3° to 5.0°, moving the junction row's
+  mapped distance from 1.09 m to the lidar's measured 1.19 m.
 
 ## 2026-09-25 — second machine, frontier exploration, and a Pi that cannot keep up
 
