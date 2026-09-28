@@ -65,13 +65,27 @@ def stop(self):
     self.ldir_pub.publish(lDIR)
     self.rdir_pub.publish(rDIR)
     
+def duty_for(speed, trim, floor_pwm):
+    """PWM for one wheel. A wheel asked for nothing gets nothing.
+
+    The original clamped every wheel up to min_pwm_val, so a wheel commanded
+    to 0.0 still ran at 15% duty and the robot could not hold one wheel still
+    or drive a gentle arc. The floor only makes sense once the wheel is meant
+    to turn at all.
+    """
+    if speed == 0.0:
+        return 0.0
+    want = (abs(speed) / max_speed) * max_pwm_val * trim
+    return max(min(want, max_pwm_val), floor_pwm)
+
+
 def wheel_vel_executer(self, left_speed, right_speed):
     global max_pwm_val
     global min_pwm_val
     global lPWM, rPWM, lDIR, rDIR
 
-    lspeedPWM = max(min(((abs(left_speed)/max_speed)*max_pwm_val),max_pwm_val),min_pwm_val)
-    rspeedPWM = max(min(((abs(right_speed)/max_speed)*max_pwm_val),max_pwm_val),min_pwm_val)
+    lspeedPWM = duty_for(left_speed, self.left_trim, self.min_pwm)
+    rspeedPWM = duty_for(right_speed, self.right_trim, self.min_pwm)
     lPWM.data=int(lspeedPWM)
     rPWM.data=int(rspeedPWM)
     pwmL.ChangeDutyCycle(lspeedPWM)
@@ -121,6 +135,34 @@ class Differential(Node):
         # the timeout stays above the usual ~0.5 s repeat delay. 0 disables.
         self.cmd_vel_timeout = float(
             self.declare_parameter('cmd_vel_timeout', 1.0).value)
+
+        # Per-wheel scaling, because the two motors do not match. Commanded
+        # straight, this robot curved 55 degrees over 2.66 m -- about 20 deg/m,
+        # or roughly 6% more speed on one wheel than the other -- which is
+        # enough to walk it into whatever is on that side and is why it kept
+        # clipping panels and wedged itself in a doorway. There are no encoders,
+        # so nothing notices or corrects this; the only fix available is to
+        # scale the duty cycles until it runs straight.
+        #
+        # To calibrate: clear 3 m ahead, run
+        #     python3 move.py fwd 2.0
+        # and read the reported drift. Positive drift (curving left) means the
+        # right wheel is fast: lower right_trim by about drift_deg_per_m * 0.003,
+        # or raise left_trim by the same. Repeat until the drift is under
+        # 2 deg/m. Both default to 1.0, which is the behaviour before this
+        # change.
+        self.left_trim = float(self.declare_parameter('left_trim', 1.0).value)
+        self.right_trim = float(self.declare_parameter('right_trim', 1.0).value)
+
+        # Lowest duty cycle worth sending to a wheel that is meant to turn.
+        # Measured with the IMU: 0.6 rad/s of commanded yaw, which is 25% duty,
+        # produced no rotation at all, while 1.0 rad/s (42%) gave 1.19 rad/s.
+        # So the real stiction threshold is somewhere in 25-42%, and the
+        # inherited 15 was never going to reach it. Left at 15 here because
+        # raising it changes how the robot behaves at low speed and that wants
+        # its own measurement; it is a parameter now so it can be swept without
+        # editing code.
+        self.min_pwm = float(self.declare_parameter('min_pwm', min_pwm_val).value)
         self.last_cmd_time = None
         if self.cmd_vel_timeout > 0.0:
             self.create_timer(0.1, self.check_cmd_vel_timeout)
