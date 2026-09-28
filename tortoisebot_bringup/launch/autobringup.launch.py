@@ -118,6 +118,13 @@ def generate_launch_description():
             {'format': 'RGB888'},
             {'width': 640},
             {'height': 480},
+            # 10 fps, not the 18-30 the sensor free-runs at. floor_scan only
+            # ticks at 5 Hz, and every extra frame is a 900 kB message that
+            # camera_node serialises and floor_scan deserialises for nothing.
+            # That traffic, on top of Cartographer, is what starved
+            # controller_server's transform listener: its map->odom froze and
+            # it reported every goal reached without the robot moving.
+            {'FrameDurationLimits': [100000, 100000]},
         ],
         # Real robot only, and optional: at 800x600 RGB888 the camera costs a
         # Pi 4 about 20% CPU that exploration does not use (camera:=False).
@@ -128,7 +135,7 @@ def generate_launch_description():
 
     # Camera obstacles, for the walls the lidar cannot see. Runs beside the
     # camera, so it goes with the robot-side group; costs little because it
-    # works on a 320-wide copy at 5 Hz.
+    # works on a 320-wide copy at 5 Hz, from a camera limited to 10 fps.
     floor_scan = Node(
         package='tortoisebot_navigation',
         executable='floor_scan.py',

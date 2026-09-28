@@ -132,20 +132,31 @@ class FloorScan(Node):
         # Only look below the horizon; above it there is no floor to see.
         fy = (h / 2) / math.tan(self.vfov / 2)
         horizon = int(h / 2 + fy * math.tan(self.pitch))
-        rows = []
+        # Which rows look like a junction, one column block per beam. This is
+        # numpy rather than a Python loop because the loop ran 60 columns x
+        # ~200 rows every frame and cost a third of a core on the Pi: enough,
+        # with Cartographer alongside it, to starve Nav2's transform listener
+        # so the controller stopped seeing map->odom and reported every goal
+        # reached without moving.
         step = max(w // self.beams, 1)
-        for i in range(self.beams):
-            x0 = min(i * step, w - 1)
-            col = edge[:, x0:min(x0 + step, w)].max(axis=1)
-            row = -1
-            run = 0
-            for y in range(h - 2, horizon, -1):
-                run = run + 1 if col[y] > self.edge_threshold else 0
-                if run >= self.run_length:
-                    row = y + run - 1
-                    break
-            rows.append(float(row))
-        rows = np.array(rows, dtype=np.float32)
+        usable = step * self.beams
+        strong = (edge[:, :usable].reshape(h, self.beams, step).max(axis=2)
+                  > self.edge_threshold)
+        # run[y] marks a stretch of `run_length` strong rows whose bottom row
+        # is y.
+        run = strong.copy()
+        for k in range(1, self.run_length):
+            run[k:] &= strong[:-k]
+        # Take the lowest such stretch, which is the nearest one, and require
+        # the whole of it to sit below the horizon.
+        window = run[min(horizon + self.run_length, h - 1):h - 1]
+        if window.shape[0] == 0:
+            rows = np.full(self.beams, -1.0, dtype=np.float32)
+        else:
+            # argmax down the reversed window is the first hit from the bottom.
+            rows = np.where(window.any(axis=0),
+                            (h - 2) - window[::-1].argmax(axis=0),
+                            -1).astype(np.float32)
         if self.neighbour_tolerance > 0 and (rows >= 0).sum() > 5:
             smooth = cv2.medianBlur(rows.reshape(1, -1), 5).ravel()
             rows[np.abs(rows - smooth) > self.neighbour_tolerance] = -1
