@@ -163,6 +163,29 @@ class Differential(Node):
         # its own measurement; it is a parameter now so it can be swept without
         # editing code.
         self.min_pwm = float(self.declare_parameter('min_pwm', min_pwm_val).value)
+
+        # Take parameter changes while running. Calibrating the trim means
+        # driving, measuring, adjusting and driving again, and restarting the
+        # node between every attempt would make that unusable -- and reading
+        # the value once at startup silently ignores `ros2 param set`, which
+        # looks exactly like a trim that had no effect.
+        self.add_on_set_parameters_callback(self._on_params)
+
+    def _on_params(self, params):
+        from rcl_interfaces.msg import SetParametersResult
+        for p in params:
+            if p.name == 'left_trim':
+                self.left_trim = float(p.value)
+            elif p.name == 'right_trim':
+                self.right_trim = float(p.value)
+            elif p.name == 'min_pwm':
+                self.min_pwm = float(p.value)
+            elif p.name == 'cmd_vel_timeout':
+                self.cmd_vel_timeout = float(p.value)
+        self.get_logger().info(
+            'trim now left %.3f right %.3f, min_pwm %.0f'
+            % (self.left_trim, self.right_trim, self.min_pwm))
+        return SetParametersResult(successful=True)
         self.last_cmd_time = None
         if self.cmd_vel_timeout > 0.0:
             self.create_timer(0.1, self.check_cmd_vel_timeout)
