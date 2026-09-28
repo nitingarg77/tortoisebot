@@ -116,13 +116,34 @@ def generate_launch_description():
         parameters=[
             {'camera': camera_port},
             {'format': 'RGB888'},
-            {'width': 800},
-            {'height': 600}
+            {'width': 640},
+            {'height': 480},
+            # floor_scan compares brightness against thresholds tuned on the
+            # real floor, so the camera must not rebrighten the picture when
+            # something enters the view.
+            {'AeEnable': False},
+            {'AwbEnable': False},
         ],
         # Real robot only, and optional: at 800x600 RGB888 the camera costs a
         # Pi 4 about 20% CPU that exploration does not use (camera:=False).
         condition=IfCondition(PythonExpression([
             "'true' if ('", use_sim_time, "' == 'false' or '", use_sim_time, "' == 'False') and ('", use_camera, "' == 'true' or '", use_camera, "' == 'True') else 'false'"
+        ]))
+    )
+
+    # Camera obstacles, for the walls the lidar cannot see. Runs beside the
+    # camera, so it goes with the robot-side group; costs little because it
+    # works on a 320-wide copy at 5 Hz.
+    floor_scan = Node(
+        package='tortoisebot_navigation',
+        executable='floor_scan.py',
+        name='floor_scan',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=IfCondition(PythonExpression([
+            "'true' if ('", use_sim_time, "' == 'false' or '", use_sim_time,
+            "' == 'False') and ('", use_camera, "' == 'true' or '", use_camera,
+            "' == 'True') else 'false'"
         ]))
     )
 
@@ -321,6 +342,7 @@ def generate_launch_description():
                 imu,
                 motors,
                 camera,
+                floor_scan,
             ]),
         ], condition=IfCondition(PythonExpression(["'", stack, "' in ('all', 'robot')"]))),
 
