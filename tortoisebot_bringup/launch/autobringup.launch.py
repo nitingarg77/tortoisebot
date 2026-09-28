@@ -105,6 +105,26 @@ def generate_launch_description():
         executable='differential.py',
         name='differential',
         output='screen',
+        parameters=[{
+            # This robot's left motor is the weaker of the two. Pivoting on one
+            # wheel at a time and reading the IMU: the right wheel managed 0.140
+            # and 0.122 m/s on two tries, the left 0.116 and 0.107, a ratio of
+            # 0.83-0.88. Untrimmed it curved 30-60 deg/m and wandered into
+            # whatever was on its left, which is how it kept clipping wall
+            # panels and wedged itself in a doorway.
+            #
+            # 1.28 was picked by measurement, not arithmetic, and it is a local
+            # best: 1.25 and 1.31 both came out worse (-2.9 and -3.0 deg/m
+            # forward, against -1.5 at 1.28). Out-and-back runs at 1.28 give
+            # -1.5 deg/m forward and +0.3 reverse with a spread of +/-0.5,
+            # against +/-36 before trimming. The leftover 1-3 deg/m is floor,
+            # slip and battery sag rather than the wheels, so tuning further
+            # chases noise.
+            #
+            # It is specific to this robot's motors and will not carry to
+            # another chassis. Recalibrate with scripts/calibrate_drive.py.
+            'left_trim': 1.28,
+        }],
         condition=UnlessCondition(use_sim_time)
     )
 
