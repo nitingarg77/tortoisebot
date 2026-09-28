@@ -11,7 +11,7 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 install(
-  PROGRAMS scripts/pose_watchdog.py
+  PROGRAMS scripts/pose_watchdog.py scripts/floor_scan.py
   DESTINATION lib/${PROJECT_NAME}
 )
 if(BUILD_TESTING)
