@@ -36,6 +36,18 @@ never saw the wall, and the robot drove into it during exploration.
   (`neighbour_tolerance_rows`) are now dropped as outliers. The same sweep
   refined the camera tilt from 4.3° to 5.0°, moving the junction row's
   mapped distance from 1.09 m to the lidar's measured 1.19 m.
+- **Fed into the costmaps and started with the camera** (`61d8a21`):
+  `/floor_scan` joins `/scan` as an observation source in all three costmap
+  layers (local obstacle, global obstacle, global voxel), marking only
+  (`clearing: False`) — it is a 53° fan, blind closer than ~0.45 m and
+  unreliable past 2.5 m, so it must not be trusted to declare space free; the
+  lidar keeps that job. floor_scan now starts alongside the camera in
+  bringup. The camera drops to 640x480 with auto exposure and auto white
+  balance off, because floor_scan's thresholds were tuned against the real
+  floor's brightness and auto exposure moved them every time the view
+  changed. Measured against the lidar after tuning: 1.15 m vs 1.18 m on the
+  fluted panel the lidar can barely see, 53 of 60 beams reading, no false
+  near returns.
 
 ## 2026-09-25 — second machine, frontier exploration, and a Pi that cannot keep up
 
