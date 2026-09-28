@@ -139,7 +139,13 @@ def generate_launch_description():
         executable='floor_scan.py',
         name='floor_scan',
         output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            # camera_ros publishes under its node name, so with name
+            # 'camera_node' the images are on /camera_node/image_raw, not the
+            # /camera/image_raw the node defaults to.
+            'image_topic': '/camera_node/image_raw',
+        }],
         condition=IfCondition(PythonExpression([
             "'true' if ('", use_sim_time, "' == 'false' or '", use_sim_time,
             "' == 'False') and ('", use_camera, "' == 'true' or '", use_camera,
