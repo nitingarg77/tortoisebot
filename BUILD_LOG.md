@@ -22,6 +22,15 @@ so images are on `/camera_node/image_raw` while floor_scan defaulted to
 published nothing, leaving the costmaps waiting on it. `autobringup.launch.py`
 now passes `image_topic: /camera_node/image_raw` explicitly.
 
+**Freezing exposure to keep the tuned threshold valid instead froze the
+camera black** (`0c17b6b`). `61d8a21` turned auto exposure and auto white
+balance off so the view floor_scan tuned against would not change level; with
+both off the camera never exposes at all, every frame came out at mean
+brightness 1 of 255, and floor_scan read the whole fan as clear. Auto
+exposure and auto white balance are on again. Instead, floor_scan scales each
+frame to a fixed median brightness before measuring edges, so the tuned
+threshold means the same thing whatever the exposure does.
+
 ### Added
 
 - **floor_scan** (`6703944`, `tortoisebot_navigation/scripts/floor_scan.py`):
@@ -49,10 +58,11 @@ now passes `image_topic: /camera_node/image_raw` explicitly.
   (`clearing: False`) — it is a 53° fan, blind closer than ~0.45 m and
   unreliable past 2.5 m, so it must not be trusted to declare space free; the
   lidar keeps that job. floor_scan now starts alongside the camera in
-  bringup. The camera drops to 640x480 with auto exposure and auto white
-  balance off, because floor_scan's thresholds were tuned against the real
-  floor's brightness and auto exposure moved them every time the view
-  changed. Measured against the lidar after tuning: 1.15 m vs 1.18 m on the
+  bringup. The camera drops to 640x480; auto exposure and auto white balance
+  were turned off here so floor_scan's thresholds, tuned against the real
+  floor's brightness, would not drift as the view changed, but that turned
+  out to blank the image instead and was reverted the same day (`0c17b6b`,
+  above). Measured against the lidar after tuning: 1.15 m vs 1.18 m on the
   fluted panel the lidar can barely see, 53 of 60 beams reading, no false
   near returns.
 
