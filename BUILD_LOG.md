@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see
+## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, and why it hangs Nav2
 
 ### Faults found, and what was done
 
@@ -47,6 +47,30 @@ to 10 fps with `FrameDurationLimits` (measured 9.97 Hz on the live node), and
 `_boundary_rows` is now numpy, checked against the old loop on 400 random
 frames across run lengths 1-5 and every horizon, identical every time.
 
+**A second costmap observation source hangs `controller_server`** (`5ca83df`).
+Adding `floor_scan` beside `scan` in `observation_sources` stopped the robot
+dead in a way that read as a navigation bug rather than a crash: Nav2
+accepted each frontier goal and reported it reached within 100 ms, three
+metres away, without moving. Two runs an hour apart, same stack and load,
+differing only in `camera:=True/False`, separate cause from symptom — with
+`floor_scan` the robot covered 0 m in 20 minutes and the lifecycle manager
+eventually tore Nav2 down on a missed bond heartbeat; without it the robot
+drove 3.7 m in the first two minutes and kept exploring. It is not CPU and
+not the network: `/tf` held 66 Hz and under 0.1 s old for five minutes,
+checked against an independent tf2 buffer in another process that never
+froze — only `controller_server`'s own buffer stopped advancing. Capping the
+camera to 10 fps and rewriting `_boundary_rows` in numpy (`176a4d1`, above)
+cut load average from 17 to 5.3 and changed nothing. What turns the hang into
+a silent false success is that Nav2 Humble's `ControllerServer::isGoalReached()`
+discards the return value of `transformPose`: once `map → odom` can't be
+resolved, the goal silently becomes the origin of `odom`, and the same frozen
+buffer pins the robot's own reported pose near that origin too, so both fall
+inside `xy_goal_tolerance`. Written up in `MODULE.md` as indicated, not
+proven: the explanation offered there — a second observation source doubles
+the `tf2_ros::MessageFilter` count on `Costmap2DROS`, from two filters to four
+because the global costmap lists both sources under two layers — is a
+hypothesis, and the A/B is one run each.
+
 ### Added
 
 - **floor_scan** (`6703944`, `tortoisebot_navigation/scripts/floor_scan.py`):
@@ -81,6 +105,15 @@ frames across run lengths 1-5 and every horizon, identical every time.
   above). Measured against the lidar after tuning: 1.15 m vs 1.18 m on the
   fluted panel the lidar can barely see, 53 of 60 beams reading, no false
   near returns.
+
+### Open
+
+- **The camera observation source stops the robot from exploring at all**,
+  per the `controller_server` hang above (`5ca83df`). Proposed fix, untried:
+  fuse the camera's ranges into the lidar scan and publish one topic, nearer
+  of the two per bearing, so the costmap keeps a single observation source
+  instead of two. The lidar sits at (-0.033, 0, 0.167) from `base_link` with
+  zero rotation, so bearings map straight across.
 
 ## 2026-09-25 — second machine, frontier exploration, and a Pi that cannot keep up
 
