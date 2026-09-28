@@ -142,6 +142,21 @@ restarting the node between attempts would make unusable, so `differential.py`
 now takes `left_trim`, `right_trim`, `min_pwm` and `cmd_vel_timeout` from an
 `add_on_set_parameters_callback` and logs the values whenever they change.
 
+**Per-wheel duty differs enough to explain the curve on its own** (`d755d0c`).
+Pivoting on one wheel at a time and reading the IMU proved repeatable where
+whole-run drift measurement was not: the right wheel managed 0.140 and
+0.122 m/s across two tries, the left 0.116 and 0.107, a ratio of 0.83-0.88.
+Untrimmed out-and-back runs gave +32.6 deg/m forward and -42.4 deg/m reverse
+with spreads of ±36 and ±28 — too erratic for a single run to mean anything,
+which is how an early measurement of +7.0 deg/m and a later one of +1.1 had
+looked like a fix when nothing had changed. `left_trim` is now set to 1.28 in
+`autobringup.launch.py`, picked by measurement rather than arithmetic: 1.25
+gave -2.9 deg/m forward and 1.31 gave -3.0, against -1.5 at 1.28. At 1.28 the
+runs read -1.5 deg/m forward and +0.3 reverse with a spread of ±0.5 — the
+spread collapsing matters more than the mean, and the leftover 1-3 deg/m is
+attributed to floor, slip and battery sag rather than the wheels. The value is
+specific to these motors and will not carry to another chassis.
+
 ### Added
 
 - **floor_scan** (`6703944`, `tortoisebot_navigation/scripts/floor_scan.py`):
@@ -176,6 +191,16 @@ now takes `left_trim`, `right_trim`, `min_pwm` and `cmd_vel_timeout` from an
   above). Measured against the lidar after tuning: 1.15 m vs 1.18 m on the
   fluted panel the lidar can barely see, 53 of 60 beams reading, no false
   near returns.
+- **Drive calibration tools** (`d755d0c`,
+  `tortoisebot_firmware/scripts/wheel_balance.py` and `calibrate_drive.py`):
+  `wheel_balance.py` pivots on one wheel at a time and reads the IMU's yaw
+  rate as a direct measure of that wheel's speed — usable now that a wheel
+  commanded to zero actually gets zero duty (`3356eb2`). `calibrate_drive.py`
+  drives out-and-back legs and reports each run's drift in deg/m rather than
+  an average alone, guarded against driving into anything by the lidar.
+  Installed alongside the driver rather than left ad hoc, since the trim
+  value is specific to these motors and recalibration will be needed again
+  after a motor change.
 
 ### Open
 
@@ -188,11 +213,6 @@ now takes `left_trim`, `right_trim`, `min_pwm` and `cmd_vel_timeout` from an
 - **The global costmap's new `lethal_cost_threshold`/`trinary_costmap`
   setting (`2f03153`) is not yet verified on the robot** — the run in
   progress when it was made was still on the old setting.
-- **`left_trim`/`right_trim` (`3356eb2`) are not yet calibrated** — both are
-  still at their default of 1.0, so the 55°/2.66 m curve is uncorrected.
-  `ros2 param set` now reaches the running motors (`bc38cd7`), which had been
-  blocking the drive-measure-adjust procedure in the code comment; that
-  procedure has not yet been run to completion on the robot.
 - **`min_pwm`'s real stiction threshold (`3356eb2`) is unmeasured** — it sits
   somewhere between 25% duty (0.6 rad/s commanded, no rotation) and 42%
   (1.0 rad/s commanded, 1.19 rad/s actual); `min_pwm` is left at the
