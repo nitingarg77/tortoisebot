@@ -6,6 +6,29 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
+## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see
+
+### Faults found, and what was done
+
+**White fluted wall panels are invisible to the lidar** (`6703944`). Measured
+on the robot facing a panel at 1.2 m: the beams straight ahead returned
+nothing in 55-80% of scans, because the ribs reflect the beam away. Nav2
+never saw the wall, and the robot drove into it during exploration.
+
+### Added
+
+- **floor_scan** (`6703944`, `tortoisebot_navigation/scripts/floor_scan.py`):
+  finds the row where the floor ends in the camera image and converts it to a
+  distance using the camera's fixed height and tilt, publishing a LaserScan
+  that Nav2 can take as a second obstacle source alongside the lidar.
+  Calibrated against the lidar on the real robot: camera tilt measured 4.3°
+  up (the URDF says level, the bracket is not), so the useful range runs from
+  about 0.45 m to 2.5 m. The geometry reproduces the measured case, junction
+  row 360 of 480 at 1.19 m, to within 5 cm. Colour segmentation was tried
+  first and rejected: the panel is the same white as the glossy floor, which
+  mirrors it, so the mask was unusable; a vertical brightness gradient finds
+  the junction regardless of colour.
+
 ## 2026-09-25 — second machine, frontier exploration, and a Pi that cannot keep up
 
 ### Machines
