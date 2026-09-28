@@ -314,6 +314,22 @@ global_costmap:
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
+        # Cartographer publishes a probability, not a yes/no. Measured on the
+        # real map: of 3150 wall cells, 55.7% sit at 51-64, 15.1% at 90-98, and
+        # only 21 cells -- 0.7% -- reach 100. Nav2's defaults here are
+        # trinary_costmap true with lethal_cost_threshold 100, which keeps those
+        # 21 and turns every other wall cell into free space. The planner's only
+        # remaining knowledge of walls was then the obstacle layer's live 2.5 m,
+        # so it routed straight through anything further off and the controller
+        # could not follow. Checked against the running costmap: 61.8% of
+        # Cartographer's walls were marked free.
+        #
+        # 65 keeps 44.3% of wall cells as lethal outright, and trinary_costmap
+        # false grades the rest rather than discarding them, so a cell at 51
+        # still costs 199 of 254 and is avoided without being impassable. That
+        # matters while mapping, when most walls are only half-confirmed.
+        lethal_cost_threshold: 65
+        trinary_costmap: false
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
