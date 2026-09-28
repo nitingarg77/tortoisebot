@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, and why it hangs Nav2
+## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, and a global costmap that discarded Cartographer's walls
 
 ### Faults found, and what was done
 
@@ -90,6 +90,25 @@ a planar scan, but the margin is what stops a change to Cartographer's
 tracking_frame from silently dropping scans. Map from the run this replaces
 is saved on the robot as `~/maps/site_map_2035`.
 
+**The global costmap's `static_layer` discarded 99% of Cartographer's
+walls** (`2f03153`). Cartographer publishes an occupancy probability, not a
+yes/no: of 3150 wall cells measured on the live map, 55.7% sit at 51-64,
+15.1% at 90-98, and only 21 cells — 0.7% — reach 100. `static_layer` was
+left on Nav2's defaults, `trinary_costmap true` with
+`lethal_cost_threshold 100`, so it kept those 21 cells and turned every
+other wall into free space; checked against the running costmap, 61.8% of
+Cartographer's walls were marked free there, and only 14.4% lethal, and
+those came from the obstacle layer marking them live rather than from the
+map. The planner's whole knowledge of walls was therefore the obstacle
+layer's 2.5 m reach — anything further off it routed straight through, and
+the controller then could not follow the path it was given. Separate from
+the voxel layer removed in `681766f`, and predates it. `lethal_cost_threshold`
+is now 65, which keeps 44.3% of wall cells lethal outright, and
+`trinary_costmap` is now false, so the rest is graded instead of discarded:
+a cell at 51 costs 199 of 254 — avoided, not impassable — which matters
+while mapping, when most walls are only half-confirmed. Not yet verified on
+the robot: the run in progress at the time was still on the old setting.
+
 ### Added
 
 - **floor_scan** (`6703944`, `tortoisebot_navigation/scripts/floor_scan.py`):
@@ -133,6 +152,9 @@ is saved on the robot as `~/maps/site_map_2035`.
   of the two per bearing, so the costmap keeps a single observation source
   instead of two. The lidar sits at (-0.033, 0, 0.167) from `base_link` with
   zero rotation, so bearings map straight across.
+- **The global costmap's new `lethal_cost_threshold`/`trinary_costmap`
+  setting (`2f03153`) is not yet verified on the robot** — the run in
+  progress when it was made was still on the old setting.
 
 ## 2026-09-25 — second machine, frontier exploration, and a Pi that cannot keep up
 
