@@ -290,6 +290,50 @@ Changing lidar means editing this repository. Note also that
 `autobringup.launch.py` launches `camera_ros`, which is a *different* package
 from the vendored `v4l2_camera` and is not installed on the development machine.
 
+**A second costmap observation source hangs `controller_server`.** Adding
+`floor_scan` beside `scan` in `observation_sources` (nav2_params_robot.yaml)
+stops the robot dead, in a way that reads as a navigation bug rather than a
+crash. Measured on the real robot, 2026-09-28:
+
+| | `scan` + `floor_scan` | `scan` alone |
+|---|---|---|
+| Distance driven in 20 min | 0 m, stuck at the origin | 3.7 m in the first 2 min, then exploring |
+| `controller_server`'s TF buffer | frozen at one timestamp, permanently | transiently stale, recovers |
+| Nav2 stack | torn down after `behavior_server` missed its 4 s bond heartbeat | healthy |
+
+It is not CPU and not the network. `/tf` on the wire stayed at 66 Hz and under
+0.1 s old throughout, verified over five minutes with an independent tf2
+buffer in another process that never froze; no transform was ever stamped in
+the future, so the buffer was not poisoned by the data. Only the buffer inside
+`controller_server` stopped advancing. Capping the camera to 10 fps and
+rewriting `floor_scan`'s inner loop in numpy (176a4d1) cut the load average
+from 17 to 5.3 and changed nothing.
+
+What turns the hang into silent wrong behaviour is Nav2 Humble itself:
+`ControllerServer::isGoalReached()` **discards the return value** of
+`nav_2d_utils::transformPose`. When `map` -> `odom` cannot be resolved, the
+goal quietly becomes the origin of `odom`, and the same frozen buffer pins the
+robot's own pose near that origin too. Both are then within
+`xy_goal_tolerance`, so the controller logs `Reached the goal!` about 100 ms
+after accepting a goal three metres away, `bt_navigator` reports success, and
+the explorer moves on. The only hint is one line per cycle from a logger that
+is not a node:
+
+    [tf_help]: Transform data too old when converting from map to odom
+    Data time: 1790606201.884, Transform time: 1790605942.520   <- never changes
+
+A frozen `Transform time` is the signature. A moving one is ordinary lag.
+
+Untested hypothesis: a second source means a second `tf2_ros::MessageFilter`
+on the same `Costmap2DROS`, and the global costmap makes it worse by listing
+both sources under *two* layers (`obstacle_layer` and `voxel_layer`), so
+`floor_scan` takes the filter count from two to four. The A/B above is one run
+each, so treat the cause as indicated rather than proven. The fix to try is to
+fuse the camera ranges into the lidar scan and publish one topic, taking the
+nearer of the two per bearing, so the costmap keeps a single source. The
+geometry is easy: the lidar sits at (-0.033, 0, 0.167) from `base_link` with
+zero rotation, so bearings map straight across.
+
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.
 
