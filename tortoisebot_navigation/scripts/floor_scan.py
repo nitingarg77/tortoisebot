@@ -62,7 +62,7 @@ class FloorScan(Node):
         super().__init__('floor_scan')
         p = self.declare_parameter
         self.height = p('camera_height', 0.134).value          # m above floor
-        self.pitch = math.radians(p('camera_pitch_up_deg', 4.3).value)
+        self.pitch = math.radians(p('camera_pitch_up_deg', 5.0).value)
         self.vfov = math.radians(p('camera_vfov_deg', 41.4).value)
         self.hfov = math.radians(p('camera_hfov_deg', 53.5).value)
         self.x_offset = p('camera_x_offset', 0.05).value       # ahead of base_link
@@ -70,9 +70,15 @@ class FloorScan(Node):
         self.beams = p('beams', 60).value
         self.min_range = p('min_range', 0.30).value
         self.max_range = p('max_range', 3.0).value
-        # A junction shows up as a strong horizontal gradient. Lower finds
-        # fainter edges and more false obstacles.
-        self.edge_threshold = p('edge_threshold', 18.0).value
+        # A junction shows up as a strong horizontal gradient. Swept on the
+        # real floor: 18 found the marble's veining (61 false readings in 180
+        # beams), 30 still found 10, 45 found none while keeping 177/180 real
+        # detections, and 60 started losing the junction itself.
+        self.edge_threshold = p('edge_threshold', 45.0).value
+        # A real floor boundary is continuous across neighbouring columns, so
+        # drop any column that disagrees with its neighbours by more than this
+        # many rows (at the processing size). 0 disables the check.
+        self.neighbour_tolerance = p('neighbour_tolerance_rows', 12).value
         self.run_length = p('edge_run_length', 3).value
         self.rate = p('rate_hz', 5.0).value
         self.frame_id = p('frame_id', 'base_link').value
@@ -131,8 +137,12 @@ class FloorScan(Node):
                 if run >= self.run_length:
                     row = y + run - 1
                     break
-            rows.append(row / scale if row >= 0 else -1)
-        return rows, h0
+            rows.append(float(row))
+        rows = np.array(rows, dtype=np.float32)
+        if self.neighbour_tolerance > 0 and (rows >= 0).sum() > 5:
+            smooth = cv2.medianBlur(rows.reshape(1, -1), 5).ravel()
+            rows[np.abs(rows - smooth) > self.neighbour_tolerance] = -1
+        return [r / scale if r >= 0 else -1 for r in rows], h0
 
     def _tick(self):
         frame = self.latest
