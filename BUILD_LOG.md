@@ -31,6 +31,22 @@ exposure and auto white balance are on again. Instead, floor_scan scales each
 frame to a fixed median brightness before measuring edges, so the tuned
 threshold means the same thing whatever the exposure does.
 
+**floor_scan and an unthrottled camera starved Nav2's transform listener,
+freezing `map → odom` mid-run** (`176a4d1`). Exploration stalled: the robot
+sat at (0,0) while bt_navigator accepted goal after goal 3 m away and
+controller_server answered "Reached the goal!" within 100 ms of each one. Its
+log showed "Transform data too old", against a transform time that never
+advanced, even though Cartographer was still publishing `map → odom` at 17 Hz
+with current stamps — controller_server's own transform listener had stopped
+being served 107 s into the run and never caught up, so the goal checker
+thought the frozen pose was already at each goal. The Pi had load average 17,
+3% idle: the camera free-ran at 18-30 fps and floor_scan deserialised every
+900 kB frame although it only uses 5 of them a second, and `_boundary_rows`
+walked 60 columns x ~200 rows in Python every tick. The camera is now capped
+to 10 fps with `FrameDurationLimits` (measured 9.97 Hz on the live node), and
+`_boundary_rows` is now numpy, checked against the old loop on 400 random
+frames across run lengths 1-5 and every horizon, identical every time.
+
 ### Added
 
 - **floor_scan** (`6703944`, `tortoisebot_navigation/scripts/floor_scan.py`):
