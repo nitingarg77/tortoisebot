@@ -131,6 +131,17 @@ a cell at 51 costs 199 of 254 — avoided, not impassable — which matters
 while mapping, when most walls are only half-confirmed. Not yet verified on
 the robot: the run in progress at the time was still on the old setting.
 
+**`ros2 param set left_trim` changed the parameter store but not the running
+motors** (`bc38cd7`). `left_trim`, `right_trim` and `min_pwm` were read once
+in `__init__`, so a live `ros2 param set` had no effect until the node was
+restarted — found while attempting the calibration `3356eb2` left open: the
+drift on the next run came out six times smaller, and was briefly taken for
+the trim working, when it was run-to-run variation and the trim had never
+been applied. Calibration is drive, measure, adjust, drive again, which
+restarting the node between attempts would make unusable, so `differential.py`
+now takes `left_trim`, `right_trim`, `min_pwm` and `cmd_vel_timeout` from an
+`add_on_set_parameters_callback` and logs the values whenever they change.
+
 ### Added
 
 - **floor_scan** (`6703944`, `tortoisebot_navigation/scripts/floor_scan.py`):
@@ -178,8 +189,10 @@ the robot: the run in progress at the time was still on the old setting.
   setting (`2f03153`) is not yet verified on the robot** — the run in
   progress when it was made was still on the old setting.
 - **`left_trim`/`right_trim` (`3356eb2`) are not yet calibrated** — both are
-  still at their default of 1.0, so the 55°/2.66 m curve is uncorrected until
-  the procedure in the code comment is run on the robot.
+  still at their default of 1.0, so the 55°/2.66 m curve is uncorrected.
+  `ros2 param set` now reaches the running motors (`bc38cd7`), which had been
+  blocking the drive-measure-adjust procedure in the code comment; that
+  procedure has not yet been run to completion on the robot.
 - **`min_pwm`'s real stiction threshold (`3356eb2`) is unmeasured** — it sits
   somewhere between 25% duty (0.6 rad/s commanded, no rotation) and 42%
   (1.0 rad/s commanded, 1.19 rad/s actual); `min_pwm` is left at the
