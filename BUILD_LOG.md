@@ -15,6 +15,13 @@ on the robot facing a panel at 1.2 m: the beams straight ahead returned
 nothing in 55-80% of scans, because the ribs reflect the beam away. Nav2
 never saw the wall, and the robot drove into it during exploration.
 
+**floor_scan subscribed to the wrong image topic in bringup** (`ce7aadf`).
+`camera_ros` publishes under its node name; bringup names it `camera_node`,
+so images are on `/camera_node/image_raw` while floor_scan defaulted to
+`/camera/image_raw`. It started and ran but subscribed to nothing and
+published nothing, leaving the costmaps waiting on it. `autobringup.launch.py`
+now passes `image_topic: /camera_node/image_raw` explicitly.
+
 ### Added
 
 - **floor_scan** (`6703944`, `tortoisebot_navigation/scripts/floor_scan.py`):
