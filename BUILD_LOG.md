@@ -328,12 +328,45 @@ Recorded but **not** claimed as cause: the buffer's last update fell within
 about a second of the test script starting, which added a TF listener and two
 sensor-QoS subscriptions to a Pi already at load 11.6.
 
+### Cartographer is ruled out; the freeze is inside `controller_server` (`c57046f`)
+
+`tf_watch.py` (`c106c62`, above) was run for 100 s with Cartographer up, Pi at
+load 11.15: 11,823 `map → odom` messages on the wire, 118 Hz, and the
+independent buffer in `tf_watch.py`'s own process never froze — longest gap
+0.0 s. So the transform is not missing and SLAM is not stalling: **the freeze
+is inside `controller_server`'s process**, explanation (b) from `c106c62`,
+now with direct evidence rather than inference, and it happened with a single
+observation source, so the `MessageFilter` count is not the trigger.
+
+**Caveat.** Nav2 had failed to activate during this run, so `controller_server`
+was not querying `map → odom` and could not be watched in the same window. The
+wire measurement stands; the simultaneous observation — this buffer healthy
+while `controller_server`'s is frozen, at the same time — does not exist yet.
+
+Nav2 failed to activate because of another orphan: two `planner_server`
+processes, one 1,356 s old from the previous launch, stayed alive because the
+cleanup pattern never matched the launch parent's real command line and the
+survivor was never force-killed — the second time in this session that
+orphaned nodes produced a misleading reading (the first was the doubled
+`differential.py`/`/scan_fused` instances found deploying, above).
+
+**Next, not yet run down:** 118 Hz is itself higher than the 66 Hz measured on
+09-28. Cartographer's `pose_publish_period_sec` sets the rate, and a listener
+that cannot keep up with that flood is a candidate cause of the starvation
+rather than a victim of it.
+
 ### Open
 
-- **The cause of the frozen `map` → `odom` is unknown.** The single-source
-  change did not fix it, so 09-28's explanation is refuted and there is no
-  working hypothesis. Run `tf_watch.py` alongside Nav2 first; it splits the
-  question in two without moving the robot.
+- **Why `controller_server`'s buffer freezes is still unknown.** `c57046f`
+  confirms the freeze is inside that process (ruling out Cartographer) but not
+  why. Still needed: the simultaneous observation (this process's buffer
+  healthy while `controller_server`'s is frozen, in the same run), and a look
+  at whether 118 Hz `map → odom` — faster than the 66 Hz seen on 09-28 — is
+  outrunning the listener.
+- **The orphan-cleanup pattern misses `planner_server` from a previous
+  launch.** A 1,356 s old process from an earlier run kept Nav2 from
+  activating during the `c57046f` test; the pattern needs to match the launch
+  parent's real command line, or the survivor needs to be force-killed.
 - **The camera's contribution has only been measured stationary.** 97% of
   scans and 5,907 lidar-blind beams were recorded on a robot that was not
   moving. Driving changes the exposure, the floor texture and the yaw-rate
