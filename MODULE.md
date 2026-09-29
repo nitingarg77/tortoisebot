@@ -405,17 +405,30 @@ before the goal was sent. It overshot the 0.80 m goal and curved off heading.
 A frozen `map` -> `odom` does not stop the robot; it makes Nav2 blind to the
 fact that it is moving.
 
-**Not yet distinguished, and this is the next thing to do:**
+**(a) is ruled out.** `scripts/tf_watch.py` holds its own tf2 buffer in a
+third process and separately counts raw `/tf` messages off the wire. Run for
+100 s with Cartographer up, on a Pi at load 11.15:
 
-- (a) Cartographer stopped *publishing* `map` -> `odom`, or
-- (b) `controller_server`'s listener stopped *being served* while `/tf` on the
-  wire stayed healthy — which is what 09-28 concluded, using an independent
-  tf2 buffer in another process.
+| | |
+|---|---|
+| `map` -> `odom` **on the wire** | 11,823 messages in 100 s = **118 Hz** |
+| Longest freeze of an ordinary buffer | **0.0 s** |
 
-Cartographer was alive throughout (7,594 log lines, clean exit on shutdown),
-which rules out a crash but not a stall. `scripts/tf_watch.py` runs the
-independent-buffer test and commands no motion; the freeze happened while the
-robot was idle, so it does not need a goal to reproduce.
+Cartographer publishes it 118 times a second and an ordinary listener tracks it
+without difficulty. So the transform is not missing and SLAM is not stalling:
+**the freeze is inside `controller_server`'s process**, which is explanation
+(b) and matches what 09-28 concluded — except that it now happens with a single
+observation source, so the `MessageFilter` count is not the trigger.
+
+Caveat on that run: Nav2 had failed to activate at the time (see below), so
+`controller_server` was not querying and its buffer could not be watched in the
+same window. The wire measurement stands regardless, but the simultaneous
+observation — this buffer healthy *while* `controller_server`'s is frozen — has
+not been made yet.
+
+**118 Hz is itself worth a look.** 09-28 measured `/tf` at 66 Hz. Cartographer's
+`pose_publish_period_sec` decides this, and a listener that cannot keep up with
+the flood is a candidate cause of the starvation rather than a victim of it.
 
 Correlation recorded, **not** claimed as cause: the buffer's last update fell
 within about a second of the test script starting, which added a TF listener
