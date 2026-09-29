@@ -241,6 +241,63 @@ cures the `controller_server` hang, which needs Nav2 up and a goal in
 flight — this run deliberately had neither. `MODULE.md` now records the fix
 as "written and half-verified on the robot" rather than "not yet run".
 
+### Deployed to the robot, and two things found doing it
+
+The robot had been unreachable all through the 09-29 work, so everything
+above was written and tested at a desk. It came back on the same LAN as the
+development box (robot `192.168.1.3` / `192.168.1.23`, box `192.168.1.100`,
+same gateway), which is what ROS 2 discovery needs; tailscale `ssh tb` works
+for a shell but the two are not interchangeable for DDS.
+
+It was 13 commits behind at `d755d0c`. Pulled, then
+`colcon build --symlink-install` over `tortoisebot_navigation`,
+`tortoisebot_firmware`, `tortoisebot_imu` and `tortoisebot_bringup` — the
+build is not optional, because six nodes now import package modules and
+`--symlink-install` puts pulled sources live against modules that are not yet
+installed. Verified against the *install* space rather than the source: all
+seven Python modules import, the entry points are symlinked, and the installed
+`nav2_params_robot.yaml` and `autobringup.launch.py` diff clean. 210 tests
+pass on the Pi.
+
+**`pkill` on the launch parent orphans every node it started.** Restarting
+bringup that way left two complete node sets running, including **two
+`differential.py` both driving the motor GPIO**. It also produced a false
+measurement that was nearly believed: `/scan_fused` read 23.4 Hz against
+`/scan`'s 11.6, exactly double, and `/floor_scan` read 10.1 Hz against a
+configured 5 — two of each node, while only one lidar driver could hold
+`/dev/ttyUSB0`. The numbers recorded under `3b6ebe0` are from a clean
+single-instance restart. Kill by PID over `pgrep -f "install/(tortoisebot|ydlidar)"`
+plus `camera_ros/camera_node`, which lives under `/opt/ros` and is missed by
+an `install/` pattern; and bracket every pattern (`[a]utobringup`) or `pkill`
+matches the ssh command string and kills its own shell mid-loop, which it did
+three times.
+
+**`cam_ws` on the robot was 4 commits stale**, missing `station/` entirely and
+carrying an install space dated 09-22 against changed `counter_node.py` and
+`overlay.py`. Nothing pointed at it; it turned up only on an explicit
+box-versus-robot comparison of both repositories. Pulled and rebuilt. Box and
+robot now agree at `9470f1c` / `e9a5ca3`, both clean.
+
+### Open
+
+- **Whether `/scan_fused` cures the `controller_server` hang is unproven.**
+  Everything measured so far was with the drivers up and nothing navigating.
+  It needs Nav2 and a goal in flight, watching whether `Transform time`
+  advances. This is the one question the whole 09-28 and 09-29 line of work
+  exists to answer.
+- **The camera's contribution has only been measured stationary.** 97% of
+  scans and 5,907 lidar-blind beams were recorded on a robot that was not
+  moving. Driving changes the exposure, the floor texture and the yaw-rate
+  term all at once.
+- **CI does not run on the default branch.** The repository's default is
+  `ros2-humble`; the workflow exists only on `frontier-exploration`, so
+  `gh run list` reports nothing and the checks are invisible from the
+  repository front page. Merging is a branch decision, not made here.
+- **Tests still cover the logic, not the nodes.** `check_names.sh` closes the
+  undefined-name hole that hid the `/imu` outage, but nothing exercises a
+  running graph, so a node that hangs a costmap is still only found by
+  driving.
+
 ## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, a global costmap that discarded Cartographer's walls, and a drivetrain that curves under a straight command
 
 ### Faults found, and what was done
