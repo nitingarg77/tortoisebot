@@ -57,6 +57,23 @@ Every tool, test or script that publishes to `cmd_vel` must have all three:
    "motors not responding" while the robot was driving.
 3. **A stop on every exit path**, including exceptions and timeouts. Publish
    zeros in a `finally`, and tolerate the context already being torn down.
+4. **A leash sized to the job.** The timeout is what ends the run when nobody
+   is watching, so derive it from the distance rather than picking a constant.
+   A 0.80 m goal at this chassis's speed needs about 6 s; it was given a flat
+   90 s and drove for all 90.
+
+**A `finally` in the launching process is not a stop when another node holds
+the command.** Nav2 owns an accepted goal, not the script that sent it, so the
+script dying leaves the robot driving. Two consequences, both learned the hard
+way on 2026-09-29:
+
+- **Killing the `ssh` that launched a tool does not stop the robot.** Without a
+  TTY, `ssh` does not reliably signal the remote process; it ran to its full
+  timeout after the command had been cancelled locally.
+- The reliable stop is to **cancel the goal or deactivate the node that holds
+  it**, not to kill the client. Anything that sends goals should say so in its
+  own docstring, because the person reaching for Ctrl-C will not read this
+  file first.
 
 Do not use a lidar cone as an odometer when the robot may be turning: the cone
 sweeps onto other surfaces and the distance is meaningless. Use it only for

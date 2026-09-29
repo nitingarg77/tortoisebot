@@ -18,7 +18,7 @@ install(
 install(
   PROGRAMS scripts/pose_watchdog.py scripts/floor_scan.py
            scripts/scan_fusion_node.py scripts/check_fusion.py
-           scripts/tf_watch.py
+           scripts/tf_watch.py scripts/one_goal.py
   DESTINATION lib/${PROJECT_NAME}
 )
 if(BUILD_TESTING)
