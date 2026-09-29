@@ -223,6 +223,24 @@ imports, and a check that shouts about cosmetics gets ignored, and then it
 catches nothing. Run against the tree before this fix, it reports exactly one
 line: `imu_node.py:162`.
 
+### `/scan_fused` measured on the robot, and the hang question still open (`3b6ebe0`)
+
+`check_fusion.py` (`49c68c4`, above) was run on the robot: 30 s with the
+drivers up and nothing navigating. `/scan_fused` kept up with `/scan` — 11.7 Hz
+against 11.6 Hz, no scans dropped. The camera changed a beam in 306 of 315
+scans (97%), 11,615 beams in total, and 5,907 of those were beams the lidar
+saw nothing on at all — the node's own report agrees independently at 96-97%.
+No beam was ever pushed further away, the safety property the fusion rule
+rests on. The only degradation seen was "no yaw for a 0.08 s gap", 5 times in
+~700 scans: the IMU history did not span the interval, and the fan was
+skipped rather than de-rotated wrongly, which is the designed behaviour.
+
+This answers the three narrower questions `49c68c4` posed, without yet
+needing Nav2. **Still open**, unchanged from `8a3e098`: whether `/scan_fused`
+cures the `controller_server` hang, which needs Nav2 up and a goal in
+flight — this run deliberately had neither. `MODULE.md` now records the fix
+as "written and half-verified on the robot" rather than "not yet run".
+
 ## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, a global costmap that discarded Cartographer's walls, and a drivetrain that curves under a straight command
 
 ### Faults found, and what was done
