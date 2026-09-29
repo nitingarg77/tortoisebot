@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-29 — working standards from the 09-28 failures, the audit against them, and CI pushed over SSH
+## 2026-09-29 — working standards from the 09-28 failures, the audit against them, CI pushed over SSH, and the camera fused into the lidar scan
 
 ### Added
 
@@ -134,6 +134,49 @@ timed out, so the rewired nodes have not been built or run on hardware.
 `nav_course.py` all now import package modules, and with `--symlink-install` a
 pull without a rebuild puts the new sources live against modules that are not
 installed — both workspaces need a build on the robot before anything moves.
+
+### The camera-into-lidar fusion left open on 09-28 was written (`8a3e098`)
+
+The 09-28 entry's open item — fuse the camera's ranges into the lidar scan so
+each costmap keeps one observation source instead of two — is written, not
+yet run. `scan_fusion_node.py` merges `/floor_scan` into `/scan` and publishes
+`/scan_fused`, which now replaces `scan` and `floor_scan` as the observation
+source on both the local and global costmap in `nav2_params_robot.yaml`. The
+decision logic lives in `tortoisebot_navigation/scan_fusion.py`, which imports
+no ROS; 43 tests cover it, taking the suite from 167 to 210, still run by
+`./run_tests.sh` and CI.
+
+The fusion rule is not `min(lidar, camera)`. `ydlidar.yaml` sets
+`invalid_range_is_inf: false`, so this driver encodes a no-return as 0.0; a
+plain minimum would return 0.0 at exactly the bearings where the lidar saw
+nothing and the camera is the only sensor that can see — the white panels —
+and 0.0 is under `range_min`, so `laser_geometry` drops the beam and nothing
+is marked at all. The rule is the nearest *valid* return per beam, and a beam
+neither sensor saw keeps the lidar's own encoding untouched. Because the
+camera can only pull a reading closer and never push one away, `/scan_fused`
+is safe to let clear, unlike `/floor_scan`, so a camera false positive now
+heals on the next scan instead of being marked permanently. The 33 mm lidar
+offset is projected per beam rather than ignored (1.8° of bearing and 3 cm of
+range at 0.45 m and 26.75°), and rotation between the camera and lidar stamps
+is corrected from the IMU's yaw — 200 ms at 1.2 rad/s smears the fan 13.8°;
+translation over the same interval costs 2.6 cm, under one costmap cell, and
+is left alone. Unknown yaw is not treated as zero: the fan is then trusted
+only inside 50 ms.
+
+Degradation, since this node is now the costmaps' only source where the raw
+lidar driver used to be: a dead camera, a stale fan, a fan that reads as a
+wall at arm's length, and a fusion exception all fall back to publishing the
+raw lidar scan; a dead lidar publishes nothing, since a fabricated scan would
+read as clear space. The node logs what fraction of scans the camera
+contributed to every 30 s, and it launches on the robot side unconditionally
+(not gated on `use_camera`), since gating it there would delete the costmaps'
+only source when the camera is off.
+
+**Not yet run on the robot** — it was offline. Whether it cures the
+`controller_server` hang is unverified; that needs 20 minutes of exploration
+on `/scan_fused` with `controller_server`'s `Transform time` watched. Sim is
+untouched: `nav2_params_simulation.yaml` keeps `/scan` and the node does not
+launch there, and Cartographer keeps the raw `/scan` either way.
 
 ## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, a global costmap that discarded Cartographer's walls, and a drivetrain that curves under a straight command
 
