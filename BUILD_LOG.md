@@ -316,13 +316,36 @@ was cancelled locally. The script's `finally` did cancel correctly at exactly
 +90 s, so the guard worked; the leash was too long and the kill path was an
 illusion.
 
-**Not yet distinguished:** (a) Cartographer stopped publishing `map` → `odom`,
-or (b) only `controller_server`'s listener stopped being served. Cartographer
-was alive throughout (7,594 log lines, clean exit), which rules out a crash but
-not a stall. `scripts/tf_watch.py` (`c106c62`) was added for exactly this: a
-third process with its own tf2 buffer and its own raw `/tf` counter, so it can
-say whether the wire kept delivering while a buffer stood still. It commands no
-motion, and the freeze happened while idle, so it needs no goal.
+**`tf_watch.py` (`c106c62`) was added for exactly this, and immediately settled
+half of it.** It is a third process holding its own tf2 buffer plus a raw `/tf`
+counter, so it can say whether the wire keeps delivering while a buffer stands
+still. Commands no motion. Run 100 s with Cartographer up at load 11.15:
+**11,823 `map` → `odom` messages, 118 Hz, and an ordinary buffer that never
+froze once.** Cartographer is not stalling and the transform is not missing —
+the freeze is inside `controller_server`'s process. That is explanation (b),
+now with direct evidence rather than inference, and it happens with a *single*
+observation source, so the `MessageFilter` count is not the trigger.
+
+Caveat: Nav2 had failed to activate during that run, so `controller_server` was
+not querying and could not be watched in the same window. The wire measurement
+stands; the simultaneous observation does not exist yet.
+
+**Why Nav2 failed to activate — another orphan.** `Failed to change state for
+node: planner_server`. There were **two** `planner_server` processes: PID 7821
+was 1,356 s old, left from the first compute launch along with its launch
+parent 7761. The cleanup missed both — the parent's command line is
+`ros2 launch …`, which the `run_compute` pattern never matched, and 7821
+survived SIGTERM without being force-killed. Two processes claiming one ROS
+node name is enough to fail a lifecycle transition. The goal run itself was
+clean, since 7821 dates from that same first launch and was the only one then,
+but this is the **second** time in one session that orphaned nodes produced a
+misleading reading. Kill the launch parent by its real command line, SIGKILL
+whatever survives, then verify with `ps` before trusting any measurement.
+
+**118 Hz of `map` → `odom` is itself suspicious.** 09-28 measured `/tf` at
+66 Hz. Cartographer's `pose_publish_period_sec` sets it, and a listener that
+cannot keep up with that flood is a candidate *cause* of the starvation rather
+than a victim of it. That is the next thing to test.
 
 Recorded but **not** claimed as cause: the buffer's last update fell within
 about a second of the test script starting, which added a TF listener and two
