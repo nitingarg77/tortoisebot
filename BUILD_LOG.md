@@ -278,13 +278,62 @@ carrying an install space dated 09-22 against changed `counter_node.py` and
 box-versus-robot comparison of both repositories. Pulled and rebuilt. Box and
 robot now agree at `9470f1c` / `e9a5ca3`, both clean.
 
+### Navigation run: the hang is NOT cured by fusing to one source
+
+Nav2 and Cartographer were brought up with `/scan_fused` as the **only**
+observation source on both costmaps — confirmed in the log, `Subscribed to
+Topics: scan_fused`, once per costmap, with every lifecycle node active and no
+errors. One `NavigateToPose` goal 0.80 m ahead was sent. Over the 90 s it was
+live:
+
+| | |
+|---|---|
+| `Transform data too old`, `map` → `odom` | **895 lines** |
+| Distinct `Transform time` values | **1** — `1790688350.982`, unchanging |
+| `Data time` in the same lines | advanced normally, `…357` → `…447` |
+| `Failed to make progress` | 5, each followed by `Aborting handle` |
+| `Resulting plan has 0 poses` | **0** — the 09-28 voxel fix held |
+
+One `Transform time` across 90 s is a frozen buffer by this repository's own
+definition. So the "second `tf2_ros::MessageFilter`" hypothesis that
+`8a3e098` was built on is **wrong, or not the whole cause**. The A/B behind it
+was one run each and was recorded as indicated rather than proven; it should
+now be read as refuted. The fusion node still does what it was separately
+measured to do — 5,907 lidar-blind beams recovered — but it does not fix this.
+
+What it cost in practice: the robot drove while `controller_server` reported
+`Failed to make progress`, because Nav2 was steering against a pose frozen 7 s
+before the goal was even sent. It overshot the 0.80 m goal and curved off
+heading, which is what a frozen `map` → `odom` looks like from outside — it
+does not stop the robot, it blinds Nav2 to the fact that the robot is moving.
+
+**Two process errors of mine, both worth keeping.** The goal ran for its full
+`TIMEOUT = 90` when a 0.80 m goal at DWB's speed needs about 6 s; a timeout
+should be derived from the distance, not a flat constant. And interrupting the
+`ssh` that launched it did **not** stop the remote process — `ssh` without a
+TTY does not reliably signal it — so the robot kept driving after the command
+was cancelled locally. The script's `finally` did cancel correctly at exactly
++90 s, so the guard worked; the leash was too long and the kill path was an
+illusion.
+
+**Not yet distinguished:** (a) Cartographer stopped publishing `map` → `odom`,
+or (b) only `controller_server`'s listener stopped being served. Cartographer
+was alive throughout (7,594 log lines, clean exit), which rules out a crash but
+not a stall. `scripts/tf_watch.py` was added for exactly this: a third process
+with its own tf2 buffer and its own raw `/tf` counter, so it can say whether
+the wire kept delivering while a buffer stood still. It commands no motion, and
+the freeze happened while idle, so it needs no goal.
+
+Recorded but **not** claimed as cause: the buffer's last update fell within
+about a second of the test script starting, which added a TF listener and two
+sensor-QoS subscriptions to a Pi already at load 11.6.
+
 ### Open
 
-- **Whether `/scan_fused` cures the `controller_server` hang is unproven.**
-  Everything measured so far was with the drivers up and nothing navigating.
-  It needs Nav2 and a goal in flight, watching whether `Transform time`
-  advances. This is the one question the whole 09-28 and 09-29 line of work
-  exists to answer.
+- **The cause of the frozen `map` → `odom` is unknown.** The single-source
+  change did not fix it, so 09-28's explanation is refuted and there is no
+  working hypothesis. Run `tf_watch.py` alongside Nav2 first; it splits the
+  question in two without moving the robot.
 - **The camera's contribution has only been measured stationary.** 97% of
   scans and 5,907 lidar-blind beams were recorded on a robot that was not
   moving. Driving changes the exposure, the floor texture and the yaw-rate

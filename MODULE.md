@@ -290,7 +290,10 @@ Changing lidar means editing this repository. Note also that
 `autobringup.launch.py` launches `camera_ros`, which is a *different* package
 from the vendored `v4l2_camera` and is not installed on the development machine.
 
-**A second costmap observation source hangs `controller_server`.** Adding
+**`controller_server`'s `map` -> `odom` buffer freezes, and the cause is not
+yet known.** The 09-28 measurement below attributes it to a second observation
+source; the 09-29 measurement further down shows the hang persisting with a
+single source, so read both before acting on either. Adding
 `floor_scan` beside `scan` in `observation_sources` (nav2_params_robot.yaml)
 stops the robot dead, in a way that reads as a navigation bug rather than a
 crash. Measured on the real robot, 2026-09-28:
@@ -374,10 +377,49 @@ The only degradation seen was `no yaw for a 0.08 s gap`, 5 times in ~700 scans
 (0.7%), which is the IMU history not spanning the interval and the fan being
 skipped rather than de-rotated wrongly. Working as designed.
 
-What this still does **not** show is whether it cures the hang, because that
-needs Nav2 up and a goal in flight, which the above deliberately did not have.
-For that: run exploration for 20 minutes and watch whether
-`controller_server`'s `Transform time` advances.
+### It does not cure the hang (2026-09-29, measured)
+
+Nav2 was brought up on the robot with `/scan_fused` as the **only** observation
+source on both costmaps, confirmed in the log (`Subscribed to Topics:
+scan_fused`, once per costmap). One `NavigateToPose` goal 0.80 m ahead was
+sent. Over the 90 s it was live:
+
+| | |
+|---|---|
+| `Transform data too old`, `map` -> `odom` | **895 lines** |
+| Distinct `Transform time` values in them | **1** — `1790688350.982`, unchanging |
+| `Data time` in the same lines | advanced normally, `...357` -> `...447` |
+| `Failed to make progress` | 5, each followed by `Aborting handle` |
+| `Resulting plan has 0 poses` | **0** — the 09-28 voxel fix held |
+
+One distinct `Transform time` across 90 seconds is the frozen buffer, by this
+file's own definition. **The single-source change did not fix it**, so the
+"second `tf2_ros::MessageFilter`" hypothesis above is wrong, or is not the
+whole cause. The A/B it rests on was one run each, which is why it was recorded
+as indicated rather than proven; treat it now as refuted unless something
+re-establishes it.
+
+What this cost in practice: the robot drove while `controller_server` reported
+`Failed to make progress`, because Nav2 was steering against a pose frozen 7 s
+before the goal was sent. It overshot the 0.80 m goal and curved off heading.
+A frozen `map` -> `odom` does not stop the robot; it makes Nav2 blind to the
+fact that it is moving.
+
+**Not yet distinguished, and this is the next thing to do:**
+
+- (a) Cartographer stopped *publishing* `map` -> `odom`, or
+- (b) `controller_server`'s listener stopped *being served* while `/tf` on the
+  wire stayed healthy — which is what 09-28 concluded, using an independent
+  tf2 buffer in another process.
+
+Cartographer was alive throughout (7,594 log lines, clean exit on shutdown),
+which rules out a crash but not a stall. `scripts/tf_watch.py` runs the
+independent-buffer test and commands no motion; the freeze happened while the
+robot was idle, so it does not need a goal to reproduce.
+
+Correlation recorded, **not** claimed as cause: the buffer's last update fell
+within about a second of the test script starting, which added a TF listener
+and two sensor-QoS subscriptions to a Pi already at load 11.6.
 
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.
