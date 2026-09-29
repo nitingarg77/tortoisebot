@@ -378,6 +378,32 @@ orphaned nodes produced a misleading reading (the first was the doubled
 that cannot keep up with that flood is a candidate cause of the starvation
 rather than a victim of it.
 
+### `one_goal.py`, the tool behind today's key measurement, committed with the leash it should have had (`d1d013f`)
+
+The script that produced the 895 frozen-`Transform time` lines under
+`c106c62` existed only in a scratch directory and on the robot's `~/logs`; as
+the reproduction for the still-open freeze it now lives in
+`tortoisebot_navigation/scripts/one_goal.py`.
+
+Two fixes went in before committing it, both drawn from `c106c62`'s "two
+process errors of mine":
+
+- **The timeout is now derived from the distance**,
+  `min(dist / 0.08 + 15, 120)`: 25 s for a 0.80 m goal rather than the flat
+  90 s it was given, which that goal needed about 6 s of.
+- **Its docstring now states plainly that killing the `ssh` that launched it
+  does not stop the robot** — without a TTY, `ssh` does not reliably signal
+  the remote process, and Nav2 holds the accepted goal regardless, so the
+  script's `finally` is not a stop. The reliable stop is to cancel the goal or
+  deactivate `controller_server`.
+
+CLAUDE.md section 2 gains both as rules — a leash sized to the job, and the
+distinction between killing a client and stopping a robot that another node
+is driving. All three of the section's existing guards (clearance, did-it-move,
+stop-on-exit) were already present in this script, and it still drove
+unattended for 90 s: the guard that was missing was the leash's length, not
+its presence.
+
 ### Open
 
 - **Why `controller_server`'s buffer freezes is still unknown.** `c57046f`
