@@ -430,6 +430,65 @@ not been made yet.
 `pose_publish_period_sec` decides this, and a listener that cannot keep up with
 the flood is a candidate cause of the starvation rather than a victim of it.
 
+### What the Humble source says (read 2026-09-29, Nav2 1.1.20, geometry2 humble)
+
+Read because the obvious theory -- "`controller_server`'s executor is starved"
+-- turned out not to fit the code at all.
+
+**The buffer's listener is not on `controller_server`'s executor.**
+`Costmap2DROS::on_configure` builds it as
+`TransformListener(*tf_buffer_)`, the single-argument constructor, which makes
+its own node (`transform_listener_impl_<addr>` -- the six seen in the graph)
+and spins it on **its own dedicated thread** with its own
+`SingleThreadedExecutor`. `controller_server` reads everything through
+`costmap_ros_->getTfBuffer()`, so this listener is the one feeding the buffer
+that freezes.
+
+**But costmap work runs on that thread. Verified link by link:**
+
+1. The listener's subscription callback calls `buffer_.setTransform()`.
+2. `BufferCore::setTransformImpl` ends by calling `testTransformableRequests()`,
+   which invokes every newly-satisfiable request's callback **on the calling
+   thread**, after dropping its locks (`buffer_core.cpp`).
+3. `tf2_ros::MessageFilter` registers exactly such a callback through
+   `Buffer::waitForTransform` whenever a message arrives before its transform.
+4. In Humble, callback queues are disabled (`TODO(clalancette)`), so
+   `messageReady` calls `signalMessage` directly.
+5. `signalMessage` is `ObstacleLayer::laserScanCallback`: laser projection, a
+   lock on the `ObservationBuffer`, and `bufferCloud`.
+
+So whenever a scan beats its transform, the obstacle layer's entire scan
+callback runs **on the thread that is supposed to be feeding the buffer**, and
+no `/tf` is consumed while it does. On a fast machine TF usually arrives first
+and this path is rare; on a loaded Pi it would not be. That is load-dependent
+in the way the fault is, and it explains why an ordinary listener with no
+`MessageFilter` attached -- `tf_watch.py` -- never froze.
+
+**The deadlock this suggests does not happen, and here is why.**
+`bufferCloud` calls `tf2_buffer_.transform(..., tf_tolerance_)`, and a timed
+lookup in `tf2_ros::Buffer::canTransform` is a polling loop with
+`sleep_for(10ms)` -- which, on the listener thread, would wait for a transform
+only that thread can deliver. But the `MessageFilter` targets `global_frame_`,
+`sensor_frame` is unset in `nav2_params_robot.yaml`, and `bufferCloud` asks for
+`lidar -> global_frame_` at the scan's own stamp: exactly what the filter
+already verified before it fired. The lookup resolves on the first check and
+never sleeps. **Link 6 breaks, so this is a coupling, not a deadlock.**
+
+What remains unverified on this thread: the `ObservationBuffer` mutex is taken
+both here (in `laserScanCallback`) and by the costmap update thread in
+`getMarkingObservations`. Contention there would stall the listener too. Not
+measured.
+
+**The experiment staged from this.** `slam_real.lua`
+`pose_publish_period_sec` 5e-3 -> 2e-2, 200 Hz -> 50 Hz, which cuts
+`setTransform` + `testTransformableRequests` work on that thread by more than
+half. It cuts both ways: a slower TF rate makes scans beat their transform
+more often, which sends *more* scan callbacks down the listener-thread path.
+20 ms between samples keeps that under a quarter of the 85 ms scan period.
+Whether the trade wins is untested. Verify with `tf_watch.py` running
+**alongside** a live goal from `one_goal.py`, before and after; revert to 5e-3
+if the hang gets worse.
+
 Correlation recorded, **not** claimed as cause: the buffer's last update fell
 within about a second of the test script starting, which added a TF listener
 and two sensor-QoS subscriptions to a Pi already at load 11.6.

@@ -43,7 +43,24 @@ options = {
   num_point_clouds = 0,
   lookup_transform_timeout_sec = 0.2,
   submap_publish_period_sec = 0.3,
-  pose_publish_period_sec = 5e-3,
+  -- 50 Hz, down from 5e-3 (200 Hz). AN EXPERIMENT, not a verified fix.
+  --
+  -- controller_server's map->odom buffer freezes at one timestamp while
+  -- map->odom stays healthy on the wire (tf_watch.py: 118 Hz, and an ordinary
+  -- listener never froze). 200 Hz was asked for and the Pi managed 118, with
+  -- provide_odom_frame publishing two transforms each time, into six listeners.
+  -- Nothing consumes it that fast: controller_frequency is 10 Hz, the costmaps
+  -- update at 5 and 1 Hz with a 1.0 s transform_tolerance.
+  --
+  -- Why it could make things WORSE, from the Humble source: each listener
+  -- services tf2_ros::MessageFilter callbacks on its own dedicated thread, and
+  -- with callback queues disabled the obstacle layer's whole scan callback runs
+  -- there whenever a scan arrives before its transform. A slower TF rate makes
+  -- that more frequent. 20 ms between samples keeps it bounded -- under a
+  -- quarter of the 85 ms scan period -- while cutting TF inserts on that same
+  -- thread by more than half. Whether the trade is a win is for the robot to
+  -- say; see MODULE.md. Revert to 5e-3 if the hang gets worse.
+  pose_publish_period_sec = 2e-2,
   trajectory_publish_period_sec = 30e-3,
   rangefinder_sampling_ratio = 1.,
   odometry_sampling_ratio = 1.,
