@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-29 — working standards from the 09-28 failures, the audit against them, and CI written but not yet pushed
+## 2026-09-29 — working standards from the 09-28 failures, the audit against them, and CI pushed over SSH
 
 ### Added
 
@@ -108,6 +108,17 @@ token with `workflow` scope, which the one used for this commit does not
 have, so the file sits locally, untracked, pending a push with the right
 credentials. Until then the 167 tests only run when someone remembers to run
 `run_tests.sh`.
+
+**Resolved the same day** (`475a86b`): the gh CLI token carries only `gist`,
+`read:org` and `repo`, not `workflow`, so the workflow file was pushed over
+SSH instead, which is not an OAuth app and is not subject to that
+restriction. The remote itself is left on HTTPS; only this one push used SSH.
+The workflow runs the same three suites — `tortoisebot_firmware`,
+`tortoisebot_navigation`, `tortoisebot_imu` — on every push and pull request,
+and deliberately does not build the ROS packages, since that needs a Humble
+container and would turn a one-second check into a slow one nobody waits for;
+build breakage stays a robot-side check, logic regressions are now caught
+here instead of only when someone remembers `run_tests.sh`.
 
 `MODULE.md`'s "no CI and no tests beyond the default ament linters" is
 replaced with what the 167 tests actually cover and, more usefully, what they
