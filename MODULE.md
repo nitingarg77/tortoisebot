@@ -325,22 +325,48 @@ is not a node:
 A frozen `Transform time` is the signature. A moving one is ordinary lag.
 
 Untested hypothesis: a second source means a second `tf2_ros::MessageFilter`
-on the same `Costmap2DROS`, and the global costmap makes it worse by listing
+on the same `Costmap2DROS`, and the global costmap made it worse by listing
 both sources under *two* layers (`obstacle_layer` and `voxel_layer`), so
-`floor_scan` takes the filter count from two to four. The A/B above is one run
-each, so treat the cause as indicated rather than proven. The fix to try is to
-fuse the camera ranges into the lidar scan and publish one topic, taking the
-nearer of the two per bearing, so the costmap keeps a single source. The
-geometry is easy: the lidar sits at (-0.033, 0, 0.167) from `base_link` with
-zero rotation, so bearings map straight across.
+`floor_scan` took the filter count from two to four. The A/B above is one run
+each, so treat the cause as indicated rather than proven.
+
+**Fix written, not yet run on the robot** (the robot was offline). Rather than
+two sources, `scan_fusion_node.py` merges the camera into the lidar scan and
+publishes `/scan_fused`, which is now the only source on both costmaps. The
+decision logic is in `tortoisebot_navigation/scan_fusion.py`, which imports no
+ROS and has 43 tests. Three things about it are worth knowing before touching
+it:
+
+- **Not `min(lidar, camera)`.** `ydlidar.yaml` sets `invalid_range_is_inf:
+  false`, so this driver publishes a no-return as **0.0**. A plain minimum
+  returns 0.0 at exactly the bearings where the lidar saw nothing and the
+  camera is the only sensor that can see — the white panels — and 0.0 is under
+  `range_min`, so `laser_geometry` drops the beam and nothing is marked at all.
+  The rule is the nearest *valid* return, and a beam neither sensor saw keeps
+  the lidar's own encoding untouched.
+- **The fused topic may clear, where `/floor_scan` could not.** Taking the
+  nearer of the two per beam means the camera can only pull a reading closer,
+  never push it away, so it cannot declare free anything the lidar sees. The
+  gain is that a camera false positive heals on the next scan instead of being
+  marked permanently.
+- **The 33 mm lidar offset is not negligible.** At 0.45 m and 26.75° it moves
+  the bearing 1.8° and the range 3 cm, so each camera beam is projected rather
+  than copied across. Rotation between the two stamps is corrected from the
+  IMU's yaw — 200 ms at 1.2 rad/s smears the fan 13.8°. Translation over the
+  same interval costs 2.6 cm, under one costmap cell, and is left uncorrected.
+
+What this does **not** yet show is whether it cures the hang. That needs a run
+on the robot: exploration for 20 minutes with `/scan_fused` as the only source,
+watching whether `controller_server`'s `Transform time` advances.
 
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.
 
-**Tests cover the logic, not the nodes.** 167 tests run without a robot,
+**Tests cover the logic, not the nodes.** 210 tests run without a robot,
 ROS or hardware (`./run_tests.sh`, and CI on every push), but they cover the
 pure modules -- `motor_math`, `floor_geometry`, `scan_geometry`, `runaway`,
-`places`, `sample_checks` -- rather than the nodes that use them. Nothing
+`places`, `scan_fusion`, `sample_checks` -- rather than the nodes that use
+them. Nothing
 exercises a running graph: no launch tests, no costmap under a synthetic scan,
 nothing that would have caught `floor_scan` hanging `controller_server`. That
 class of bug is still found by driving the robot into something.

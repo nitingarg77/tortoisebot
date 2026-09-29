@@ -17,6 +17,7 @@ install(
 )
 install(
   PROGRAMS scripts/pose_watchdog.py scripts/floor_scan.py
+           scripts/scan_fusion_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 if(BUILD_TESTING)
@@ -27,6 +28,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_places test/test_places.py)
   ament_add_pytest_test(test_scan_geometry test/test_scan_geometry.py)
   ament_add_pytest_test(test_runaway test/test_runaway.py)
+  ament_add_pytest_test(test_scan_fusion test/test_scan_fusion.py)
 endif()
 
 ament_package()

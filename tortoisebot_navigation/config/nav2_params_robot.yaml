@@ -207,15 +207,29 @@ local_costmap:
         enabled: True
         observation_persistence: 0.0
         combination_method: 1
-        observation_sources: scan floor_scan
-        scan:
+        # ONE observation source, not two. `scan` and `floor_scan` were listed
+        # here separately, and each source gives the layer its own
+        # tf2_ros::MessageFilter; MODULE.md records what the second one did to
+        # controller_server -- a transform listener that stopped being served
+        # while /tf on the wire stayed at 66 Hz, and a costmap frozen at one
+        # timestamp for fifteen minutes with nothing logged. scan_fusion_node.py
+        # merges the camera into the lidar scan before it gets here, so there is
+        # one filter per layer again. Cartographer still takes the raw /scan.
+        observation_sources: scan_fused
+        scan_fused:
           # Costmap layers live on a child node (e.g. local_costmap/local_costmap),
-          # so a relative name here would resolve to <ns>/local_costmap/scan,
-          # not <ns>/scan. This nav2 build has no joinWithParentNamespace to
-          # correct that, so the namespace is substituted in literally by
-          # ReplaceString at launch time. Empty namespace yields /scan.
-          topic: <robot_namespace>/scan
+          # so a relative name here would resolve to <ns>/local_costmap/scan_fused,
+          # not <ns>/scan_fused. This nav2 build has no joinWithParentNamespace
+          # to correct that, so the namespace is substituted in literally by
+          # ReplaceString at launch time. Empty namespace yields /scan_fused.
+          topic: <robot_namespace>/scan_fused
           max_obstacle_height: 2.0
+          # Clearing is safe on this topic in a way it was not on /floor_scan.
+          # Fusion takes the nearer of the two sensors per beam, so the camera
+          # can only ever pull a reading closer, never push it away -- it cannot
+          # declare free anything the lidar sees. The gain is that a camera
+          # false positive now heals itself on the next scan instead of being
+          # marked permanently, which is what marking-only left behind.
           clearing: True
           marking: True
           data_type: "LaserScan"
@@ -224,20 +238,6 @@ local_costmap:
           obstacle_max_range: 4.5
           obstacle_min_range: 0.15
           decay_function: exponential
-        floor_scan:
-          # Camera-derived obstacles: the lidar cannot see the white fluted
-          # panels in this building (measured: nothing returned in 55-80% of
-          # scans head-on at 1.2 m). floor_scan.py finds where the floor ends
-          # and publishes it as a scan. It only marks, never clears: it is a
-          # narrow 53 deg fan that sees nothing closer than ~0.45 m, so it must
-          # not be trusted to declare space free.
-          topic: <robot_namespace>/floor_scan
-          max_obstacle_height: 2.0
-          clearing: False
-          marking: True
-          data_type: "LaserScan"
-          obstacle_max_range: 2.5
-          obstacle_min_range: 0.45
       static_layer:
         map_subscribe_transient_local: True
       always_send_full_costmap: False
@@ -281,14 +281,12 @@ global_costmap:
         # z = -0.110 into the published transform -- cannot silently start
         # dropping scans.
         min_obstacle_height: -0.2
-        observation_sources: scan floor_scan
-        scan:
-          # Costmap layers live on a child node (e.g. local_costmap/local_costmap),
-          # so a relative name here would resolve to <ns>/local_costmap/scan,
-          # not <ns>/scan. This nav2 build has no joinWithParentNamespace to
-          # correct that, so the namespace is substituted in literally by
-          # ReplaceString at launch time. Empty namespace yields /scan.
-          topic: <robot_namespace>/scan
+        # One source, for the reason spelled out on the local costmap above.
+        observation_sources: scan_fused
+        scan_fused:
+          # Namespace substituted in literally by ReplaceString at launch time,
+          # as on the local costmap. Empty namespace yields /scan_fused.
+          topic: <robot_namespace>/scan_fused
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -297,20 +295,6 @@ global_costmap:
           raytrace_min_range: 0.15
           obstacle_max_range: 2.5
           obstacle_min_range: 0.15
-        floor_scan:
-          # Camera-derived obstacles: the lidar cannot see the white fluted
-          # panels in this building (measured: nothing returned in 55-80% of
-          # scans head-on at 1.2 m). floor_scan.py finds where the floor ends
-          # and publishes it as a scan. It only marks, never clears: it is a
-          # narrow 53 deg fan that sees nothing closer than ~0.45 m, so it must
-          # not be trusted to declare space free.
-          topic: <robot_namespace>/floor_scan
-          max_obstacle_height: 2.0
-          clearing: False
-          marking: True
-          data_type: "LaserScan"
-          obstacle_max_range: 2.5
-          obstacle_min_range: 0.45
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True

@@ -175,6 +175,24 @@ def generate_launch_description():
         ]))
     )
 
+    # Merges /floor_scan into /scan and publishes /scan_fused, which is the
+    # only observation source both costmaps take. It replaces listing `scan`
+    # and `floor_scan` separately, which gave each costmap layer a second
+    # tf2_ros::MessageFilter and hung controller_server -- see MODULE.md.
+    #
+    # Deliberately NOT gated on use_camera. With the camera off it passes the
+    # lidar scan straight through, which is what keeps Nav2 seeing anything at
+    # all; gating it here would delete the costmaps' only source. It runs on
+    # the robot side because that is where all three inputs are, so one topic
+    # crosses to the compute side instead of two.
+    scan_fusion = Node(
+        package='tortoisebot_navigation',
+        executable='scan_fusion_node.py',
+        name='scan_fusion',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=UnlessCondition(use_sim_time))
+
     # EKF node — disabled (not used in any pipeline)
     # ekf = Node(
     #     package='robot_localization',
@@ -371,6 +389,7 @@ def generate_launch_description():
                 motors,
                 camera,
                 floor_scan,
+                scan_fusion,
             ]),
         ], condition=IfCondition(PythonExpression(["'", stack, "' in ('all', 'robot')"]))),
 
