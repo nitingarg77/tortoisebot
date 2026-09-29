@@ -1,0 +1,36 @@
+# Run the desk-testable suites on every push.
+#
+# These tests need no robot, no ROS and no hardware -- that is the whole point
+# of the modules they cover (CLAUDE.md section 3). Without this they only run
+# when someone remembers, and MODULE.md's "no CI and no tests" stays true in
+# the half that matters.
+#
+# Deliberately not building the ROS packages here: that needs a Humble
+# container and would turn a two-second check into a slow one nobody waits for.
+# Build breakage is caught on the robot; logic regressions are caught here.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install what the pure modules need
+        run: pip install pytest numpy opencv-python-headless pyyaml
+      - name: Run every suite
+        run: |
+          set -e
+          failed=0
+          for pkg in tortoisebot_firmware tortoisebot_navigation tortoisebot_imu; do
+            echo "::group::$pkg"
+            (cd "$pkg" && python -m pytest test -q) || failed=1
+            echo "::endgroup::"
+          done
+          exit $failed
