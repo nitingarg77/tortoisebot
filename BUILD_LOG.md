@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-29 — working standards from the 09-28 failures, the audit against them, CI pushed over SSH, and the camera fused into the lidar scan
+## 2026-09-29 — working standards from the 09-28 failures, the audit against them, CI pushed over SSH, the camera fused into the lidar scan, and a silent /imu outage the refactor left behind
 
 ### Added
 
@@ -194,6 +194,34 @@ arrange the hang itself — that still needs Nav2 up, a goal in flight, and
 `controller_server`'s `Transform time` watched by eye — and is reported as a
 manual step rather than asserted. `MODULE.md` now points at it instead of
 just describing that manual step.
+
+### /imu had published nothing since 379d6eb, and the check that would have caught it (`4658c53`)
+
+Found the moment the robot came back online, in the bringup log:
+`[imu_publisher]: Error: name 'norm' is not defined` — not a warning. The
+error is on the quaternion normalisation line, which runs before the
+publish, so every sample died there and `/imu` published nothing since
+379d6eb. Cartographer lost the gravity direction it aligns its 2D frame to,
+and `scan_fusion` (`8a3e098`, above, committed the same day as the break)
+lost the yaw it de-rotates the camera fan with, which would have silently
+degraded fusion to the 50 ms unknown-yaw window.
+
+`norm` was a local computed by the BNO055 gates; splitting those into
+`sample_checks.py` took the local with them and left `imu_node.py` referring
+to a name that no longer existed. `sample_checks` already exports `norm`, so
+the fix is to import it.
+
+The class of bug is the wider point: `imu_node.py`, like the other node
+scripts, imports `rclpy`, `board`, `RPi.GPIO` and `cv2` at module scope, so it
+cannot be imported off-robot and the pytest suites never touch it — the gap
+left open above as "not verified on the robot." pyflakes parses rather than
+imports, so it sees undefined names without a robot or ROS. `check_names.sh`
+runs it over all 48 files in `tortoisebot_*` and is wired into both
+`run_tests.sh` and `.github/workflows/tests.yml`. It checks only undefined
+names, not unused imports: the vendored launch files are full of unused
+imports, and a check that shouts about cosmetics gets ignored, and then it
+catches nothing. Run against the tree before this fix, it reports exactly one
+line: `imu_node.py:162`.
 
 ## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, a global costmap that discarded Cartographer's walls, and a drivetrain that curves under a straight command
 
