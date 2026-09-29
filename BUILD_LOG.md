@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-29 — working standards from the 09-28 failures
+## 2026-09-29 — working standards from the 09-28 failures, and the audit against them
 
 ### Added
 
@@ -25,6 +25,47 @@ are on branch `frontier-exploration` unless noted.
   requirement — removing the duplicated voxel layer was four lines and took
   the stack from 0/8 goals to 2/0 (`681766f`, 09-28) — while new subsystems
   get design, then mocked interfaces, then tests.
+
+### Faults found in the audit against `1e3c1f7`, and what was done
+
+An audit of the repository against that standards file failed three of its
+eight sections, including one where the standards file was itself wrong
+(`379d6eb`).
+
+- **Section 3, testability: nothing here could be imported without a
+  robot.** `floor_scan.py`, `differential.py`, `nav_course.py` and
+  `pose_watchdog.py` all imported `rclpy` at module scope, and
+  `differential.py` imported `RPi.GPIO` too; there were no tests beyond the
+  default ament linters. The duty-cycle change in `3356eb2` and the numpy
+  rewrite in `176a4d1` had both been checked against logic pasted into
+  throwaway scripts rather than the code that ships. The pure logic now
+  lives in `tortoisebot_firmware/motor_math.py` and
+  `tortoisebot_navigation/floor_geometry.py`, importing nothing but the
+  standard library, numpy and cv2; `differential.py` and `floor_scan.py` are
+  now thin shells that import those modules, and `floor_scan.py` loses 38
+  lines of duplicated geometry. 98 tests run at a desk in under half a
+  second, wired into each package via `ament_add_pytest_test` (run with
+  `colcon test --packages-select tortoisebot_firmware
+  tortoisebot_navigation`). Both rewrites are pinned against the
+  implementations they replaced: `old_duty` for the duty cycle,
+  `loop_reference` across 40 random frames for the boundary search.
+- **CLAUDE.md section 3 was itself wrong.** It claimed `range_from_row` was
+  checkable at a desk with no ROS; it was not, since the file it lived in
+  imports `rclpy`. Corrected, with the reason kept rather than quietly
+  reworded.
+- **Section 2, motion guards.** `1ms.py` commanded 1.0 m/s — five times this
+  robot's maximum — with no lidar, no clearance check and no stop path, and
+  was broken in a way that hid this: `rate.sleep()` with no spinning executor
+  blocks before it ever publishes. Deleted; nothing referenced it.
+  `wheel_balance.py` (09-28) had no `finally`, so an exception mid-burst left
+  the robot driving until `differential.py`'s 1 s `cmd_vel` timeout caught
+  it; it now stops on every exit path and checks clearance during the burst
+  rather than only before it. `pose_watchdog.py` exited without reasserting
+  its stop, releasing a robot that had been halted for a reason; it now
+  leaves one last stop behind if it was tripped.
+- **`__pycache__` was being committed.** Six `.pyc` files were tracked,
+  including one for `floor_scan` that had turned up in an unrelated diff.
+  Now covered by `.gitignore`.
 
 ## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, a global costmap that discarded Cartographer's walls, and a drivetrain that curves under a straight command
 
