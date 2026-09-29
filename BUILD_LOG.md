@@ -6,6 +6,26 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
+## 2026-09-29 — working standards from the 09-28 failures
+
+### Added
+
+- **CLAUDE.md** (`1e3c1f7`): working standards for this repository —
+  evidence before assertion, three mandatory guards on anything that commands
+  `cmd_vel` (a clearance guard, a did-it-actually-move check, a stop on every
+  exit path), testing without the robot, concurrency and determinism,
+  resource handling, when a design phase is warranted, calibration belonging
+  to this chassis, and what a commit message must state. Each rule is tied to
+  a specific 09-28 failure: the CPU-load fix committed against an unmeasured
+  cause (`176a4d1`), the left-motor trim reported as working before the
+  parameter had reached the motors (`bc38cd7`), a rotation test whose
+  evidence was two identical lidar readings from a robot that had not moved,
+  and a deadband test with no clearance guard that drove 6.8 m when 3 m was
+  asked for. Bug fixes are deliberately exempted from the design-first
+  requirement — removing the duplicated voxel layer was four lines and took
+  the stack from 0/8 goals to 2/0 (`681766f`, 09-28) — while new subsystems
+  get design, then mocked interfaces, then tests.
+
 ## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, a global costmap that discarded Cartographer's walls, and a drivetrain that curves under a straight command
 
 ### Faults found, and what was done
