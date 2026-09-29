@@ -278,7 +278,7 @@ carrying an install space dated 09-22 against changed `counter_node.py` and
 box-versus-robot comparison of both repositories. Pulled and rebuilt. Box and
 robot now agree at `9470f1c` / `e9a5ca3`, both clean.
 
-### Navigation run: the hang is NOT cured by fusing to one source
+### Navigation run: the hang is NOT cured by fusing to one source (`c106c62`)
 
 Nav2 and Cartographer were brought up with `/scan_fused` as the **only**
 observation source on both costmaps — confirmed in the log, `Subscribed to
@@ -319,10 +319,10 @@ illusion.
 **Not yet distinguished:** (a) Cartographer stopped publishing `map` → `odom`,
 or (b) only `controller_server`'s listener stopped being served. Cartographer
 was alive throughout (7,594 log lines, clean exit), which rules out a crash but
-not a stall. `scripts/tf_watch.py` was added for exactly this: a third process
-with its own tf2 buffer and its own raw `/tf` counter, so it can say whether
-the wire kept delivering while a buffer stood still. It commands no motion, and
-the freeze happened while idle, so it needs no goal.
+not a stall. `scripts/tf_watch.py` (`c106c62`) was added for exactly this: a
+third process with its own tf2 buffer and its own raw `/tf` counter, so it can
+say whether the wire kept delivering while a buffer stood still. It commands no
+motion, and the freeze happened while idle, so it needs no goal.
 
 Recorded but **not** claimed as cause: the buffer's last update fell within
 about a second of the test script starting, which added a TF listener and two
