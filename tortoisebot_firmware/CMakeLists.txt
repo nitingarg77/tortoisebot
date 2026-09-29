@@ -14,6 +14,8 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
 
   ament_lint_auto_find_test_dependencies()
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_motor_math test/test_motor_math.py)
 endif()
 
 ament_python_install_package(${PROJECT_NAME})

@@ -64,16 +64,29 @@ for rep in range(3):
         cmd.linear.x, cmd.angular.z = v, w
         last, turned = st['yaw'], 0.0
         end = time.time() + BURST
-        while time.time() < end:
-            rclpy.spin_once(n, timeout_sec=0.02)
-            y = st['yaw']
-            turned += math.atan2(math.sin(y - last), math.cos(y - last))
-            last = y
-            pub.publish(cmd)
-            time.sleep(0.02)
-        for _ in range(10):
-            pub.publish(Twist())
-            time.sleep(0.03)
+        # The stop goes in a finally: an exception raised mid-burst would
+        # otherwise leave the robot driving until differential.py's 1 s cmd_vel
+        # timeout notices, and a tool that commands motion must stop it on
+        # every exit path (CLAUDE.md section 2).
+        try:
+            while time.time() < end:
+                rclpy.spin_once(n, timeout_sec=0.02)
+                y = st['yaw']
+                turned += math.atan2(math.sin(y - last), math.cos(y - last))
+                last = y
+                if nearest(st.get('s')) < GUARD:
+                    print('  guard: something at %.2f m, stopping the burst'
+                          % nearest(st.get('s')))
+                    break
+                pub.publish(cmd)
+                time.sleep(0.02)
+        finally:
+            for _ in range(10):
+                try:
+                    pub.publish(Twist())
+                except Exception:
+                    break        # context already gone; the 1 s timeout covers it
+                time.sleep(0.03)
         rate = turned / BURST
         print('%-16s %+7.2f rad/s  %.3f m/s  (asked %.3f)'
               % ('%s #%d' % (name, rep + 1), rate, abs(rate) * L, WHEEL),

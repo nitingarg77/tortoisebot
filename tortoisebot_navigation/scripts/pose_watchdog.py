@@ -15,6 +15,8 @@ then stays tripped until ~/reset is called.
 
 import math
 
+import time
+
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -138,6 +140,19 @@ def main(args=None):
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
+        # If this node dies while tripped, nothing else is holding the robot:
+        # tripping is what cancelled the Nav2 goals, and the only thing keeping
+        # the wheels still is this node republishing zero. Leave one last stop
+        # behind on the way out rather than releasing a robot that was stopped
+        # for a reason. Harmless when it was never tripped, because zero is
+        # what a stopped robot is already being sent.
+        try:
+            if node.tripped:
+                for _ in range(5):
+                    node.cmd_pub.publish(Twist())
+                    time.sleep(0.02)
+        except Exception:
+            pass          # shutting down anyway; differential.py times out in 1 s
         node.destroy_node()
         rclpy.try_shutdown()
 

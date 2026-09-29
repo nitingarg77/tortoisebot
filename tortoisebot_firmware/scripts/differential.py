@@ -18,15 +18,24 @@ leftForward = 6     #   Yellow
 rightForward = 16   #   Orange
 rightBackward = 20  #   Red
 
-motor_rpm = 60              #   max rpm of motor on full voltage 
-wheel_diameter = 0.065      #   in meters
-wheel_separation = 0.17     #   in meters
-max_pwm_val = 100           #   100 for Raspberry Pi , 255 for Arduino
-min_pwm_val = 15            #   Minimum PWM value that is needed for the robot to move
+# The kinematics and the duty-cycle rule live in tortoisebot_firmware.motor_math,
+# which imports nothing but the standard library. This file cannot be imported
+# without rclpy and RPi.GPIO, so anything defined here can only be tested on a
+# robot -- and a change to the duty cycle that can only be tested on a robot is
+# a change that gets tested by driving into something.
+from tortoisebot_firmware.motor_math import (
+    MAX_PWM as max_pwm_val,
+    MAX_SPEED as max_speed,
+    MOTOR_RPM as motor_rpm,
+    WHEEL_DIAMETER as wheel_diameter,
+    WHEEL_SEPARATION as wheel_separation,
+    DEFAULT_MIN_PWM as min_pwm_val,
+    duty_for,
+    wheel_speeds,
+)
 
 wheel_radius = wheel_diameter/2
 circumference_of_wheel = 2 * pi * wheel_radius
-max_speed = (circumference_of_wheel*motor_rpm)/60   #   m/sec
 lPWM=Int32()
 rPWM=Int32()
 lDIR=Bool()
@@ -65,20 +74,6 @@ def stop(self):
     self.ldir_pub.publish(lDIR)
     self.rdir_pub.publish(rDIR)
     
-def duty_for(speed, trim, floor_pwm):
-    """PWM for one wheel. A wheel asked for nothing gets nothing.
-
-    The original clamped every wheel up to min_pwm_val, so a wheel commanded
-    to 0.0 still ran at 15% duty and the robot could not hold one wheel still
-    or drive a gentle arc. The floor only makes sense once the wheel is meant
-    to turn at all.
-    """
-    if speed == 0.0:
-        return 0.0
-    want = (abs(speed) / max_speed) * max_pwm_val * trim
-    return max(min(want, max_pwm_val), floor_pwm)
-
-
 def wheel_vel_executer(self, left_speed, right_speed):
     global max_pwm_val
     global min_pwm_val
@@ -210,11 +205,8 @@ class Differential(Node):
         linear_vel = data.linear.x                  # Linear Velocity of Robot
         angular_vel = data.angular.z                # Angular Velocity of Robot
 
-        VrplusVl  = 2 * linear_vel
-        VrminusVl = angular_vel * wheel_separation
-        
-        right_vel = ( VrplusVl + VrminusVl ) / 2      # right wheel velocity along the ground
-        left_vel  = VrplusVl - right_vel              # left wheel velocity along the ground
+        left_vel, right_vel = wheel_speeds(linear_vel, angular_vel,
+                                          wheel_separation)
         
         if (left_vel == 0.0 and right_vel == 0.0):
             stop(self)

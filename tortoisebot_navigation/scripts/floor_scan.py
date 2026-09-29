@@ -30,17 +30,13 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, LaserScan
 
-
-def range_from_row(row, image_height, vfov, pitch, height, x_offset=0.0):
-    """Distance to whatever stands at image row `row`, or inf if it is at or
-    above the horizon. Pure geometry, so it can be checked without a robot."""
-    if row < 0:
-        return float('inf')
-    fy = (image_height / 2) / math.tan(vfov / 2)
-    angle = math.atan((row - image_height / 2) / fy) - pitch
-    if angle <= math.radians(0.5):
-        return float('inf')
-    return height / math.tan(angle) - x_offset
+# The geometry and the boundary search live in a module that imports no ROS,
+# so they are covered by tortoisebot_navigation/test/test_floor_geometry.py
+# without a robot. This file cannot be imported without rclpy, so anything
+# defined here can only be tested by driving.
+from tortoisebot_navigation.floor_geometry import (
+    boundary_rows, horizon_row, normalise, range_from_row, rows_to_ranges,
+)
 
 
 def to_bgr(msg):
@@ -99,67 +95,22 @@ class FloorScan(Node):
         except ValueError as e:
             self.get_logger().error(str(e), throttle_duration_sec=10.0)
 
-    # --- geometry ---------------------------------------------------------
-
-    def _rows_to_ranges(self, rows, h):
-        out = []
-        for row in rows:
-            d = range_from_row(row, h, self.vfov, self.pitch, self.height,
-                               self.x_offset)
-            out.append(d if self.min_range <= d <= self.max_range else float('inf'))
-        return out
-
     # --- detection --------------------------------------------------------
 
     def _boundary_rows(self, frame):
         """For each of `beams` columns, the row where the floor ends (-1 = none)."""
         h0, w0 = frame.shape[:2]
         scale = self.width / w0
-        img = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-        h, w = img.shape[:2]
+        img = cv2.resize(frame, None, fx=scale, fy=scale,
+                         interpolation=cv2.INTER_AREA)
         gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (5, 5), 0)
-        # Scale to a fixed median brightness first. The camera's auto exposure
-        # changes the picture's level whenever the view changes, and an
-        # absolute edge threshold would then mean something different every
-        # frame. (Disabling auto exposure at startup is not the answer: the
-        # camera then never exposes at all and the image comes out black.)
-        median = float(np.median(gray))
-        gray = np.clip(gray.astype(np.float32) * (128.0 / max(median, 1.0)), 0, 255)
         # Horizontal edges: a floor/wall junction is a step in brightness down
         # the column, whatever the colours are.
-        edge = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3))
-
-        # Only look below the horizon; above it there is no floor to see.
-        fy = (h / 2) / math.tan(self.vfov / 2)
-        horizon = int(h / 2 + fy * math.tan(self.pitch))
-        # Which rows look like a junction, one column block per beam. This is
-        # numpy rather than a Python loop because the loop ran 60 columns x
-        # ~200 rows every frame and cost a third of a core on the Pi: enough,
-        # with Cartographer alongside it, to starve Nav2's transform listener
-        # so the controller stopped seeing map->odom and reported every goal
-        # reached without moving.
-        step = max(w // self.beams, 1)
-        usable = step * self.beams
-        strong = (edge[:, :usable].reshape(h, self.beams, step).max(axis=2)
-                  > self.edge_threshold)
-        # run[y] marks a stretch of `run_length` strong rows whose bottom row
-        # is y.
-        run = strong.copy()
-        for k in range(1, self.run_length):
-            run[k:] &= strong[:-k]
-        # Take the lowest such stretch, which is the nearest one, and require
-        # the whole of it to sit below the horizon.
-        window = run[min(horizon + self.run_length, h - 1):h - 1]
-        if window.shape[0] == 0:
-            rows = np.full(self.beams, -1.0, dtype=np.float32)
-        else:
-            # argmax down the reversed window is the first hit from the bottom.
-            rows = np.where(window.any(axis=0),
-                            (h - 2) - window[::-1].argmax(axis=0),
-                            -1).astype(np.float32)
-        if self.neighbour_tolerance > 0 and (rows >= 0).sum() > 5:
-            smooth = cv2.medianBlur(rows.reshape(1, -1), 5).ravel()
-            rows[np.abs(rows - smooth) > self.neighbour_tolerance] = -1
+        edge = np.abs(cv2.Sobel(normalise(gray), cv2.CV_32F, 0, 1, ksize=3))
+        rows = boundary_rows(edge, self.beams, self.edge_threshold,
+                             self.run_length,
+                             horizon_row(img.shape[0], self.vfov, self.pitch),
+                             self.neighbour_tolerance)
         return [r / scale if r >= 0 else -1 for r in rows], h0
 
     def _tick(self):
@@ -167,7 +118,8 @@ class FloorScan(Node):
         if frame is None:
             return
         rows, h = self._boundary_rows(frame)
-        ranges = self._rows_to_ranges(rows, h)
+        ranges = rows_to_ranges(rows, h, self.vfov, self.pitch, self.height,
+                                self.x_offset, self.min_range, self.max_range)
 
         msg = LaserScan()
         msg.header.stamp = self.get_clock().now().to_msg()

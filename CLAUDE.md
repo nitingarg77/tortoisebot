@@ -67,11 +67,22 @@ against a second bearing.
 
 `MODULE.md` lists "no CI and no tests" as a known gap. Do not widen it.
 
-- **Pure functions for anything with geometry or thresholds.**
-  `floor_scan.range_from_row()` is the pattern: no node, no ROS, checkable at a
-  desk. Its numpy rewrite was verified against the loop it replaced on 400
-  random frames across every run length and horizon before it went near the
-  robot.
+- **Pure logic goes in a module that imports no ROS**, and the node imports
+  that module. `tortoisebot_navigation/floor_geometry.py` and
+  `tortoisebot_firmware/motor_math.py` are the pattern; `floor_scan.py` and
+  `differential.py` are thin shells over them.
+
+  The rule exists because putting the function in the node file is not enough.
+  Both of those functions started inside nodes that import `rclpy` and
+  `RPi.GPIO` at module scope, so neither could be reached without a robot, and
+  both were "verified" against logic pasted into a throwaway script. A copy
+  proves the algorithm; it says nothing about the code that ships, and the two
+  drift apart silently. The tests now import the module the robot runs.
+
+- **Pin what you replace.** When a rewrite is meant to preserve behaviour, keep
+  the old implementation in the test file and assert they agree:
+  `test_motor_math.old_duty` and `test_floor_geometry.loop_reference` do this,
+  the second across 40 random frames covering every run length and horizon.
 - **New nodes take their inputs through an interface, not a hard-wired
   subscription.** A node that can be handed a synthetic `LaserScan` can be
   tested; one that can only subscribe to `/scan` can only be tested on the

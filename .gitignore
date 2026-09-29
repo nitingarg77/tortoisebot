@@ -1,0 +1,6 @@
+
+# Python build artefacts. These were being committed: a stale .pyc next to a
+# script is a second copy of the logic that nobody reads and git keeps offering
+# in diffs.
+__pycache__/
+*.py[cod]
