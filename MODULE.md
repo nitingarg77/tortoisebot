@@ -356,8 +356,16 @@ it:
   same interval costs 2.6 cm, under one costmap cell, and is left uncorrected.
 
 What this does **not** yet show is whether it cures the hang. That needs a run
-on the robot: exploration for 20 minutes with `/scan_fused` as the only source,
-watching whether `controller_server`'s `Transform time` advances.
+on the robot. `scripts/check_fusion.py` covers the first half of it and
+commands no motion:
+
+    ros2 run tortoisebot_navigation check_fusion.py --seconds 30
+
+It asserts that `/scan_fused` keeps up with `/scan`, that the camera actually
+changes beams rather than the node being a passthrough, and that no beam is
+ever pushed *further* away. What it cannot arrange is the hang itself, which
+needs Nav2 up and a goal in flight; for that, run exploration for 20 minutes
+and watch whether `controller_server`'s `Transform time` advances.
 
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.
