@@ -6,8 +6,6 @@ filled in. Consumers are cartographer_node (which remaps imu:=/imu) and, when
 enabled, robot_localization's ekf_filter_node.
 """
 
-import math
-
 import board
 import adafruit_bno055
 import rclpy
@@ -15,7 +13,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Imu
 
 
-from tortoisebot_imu.sample_checks import Rejected, check_sample
+from tortoisebot_imu.sample_checks import Rejected, check_sample, norm
 
 
 class ImuPublisher(Node):
@@ -159,7 +157,14 @@ class ImuPublisher(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.frame_id
 
-        w, x, y, z = (float(c) / norm for c in quat)
+        # Normalised because check_sample only bounds the norm to within
+        # QUATERNION_TOLERANCE of 1, and Cartographer wants a unit rotation.
+        # `norm` used to be a local computed by the gate that now lives in
+        # sample_checks; splitting it out left this line referring to a name
+        # that no longer existed, and every sample died here with
+        # "name 'norm' is not defined" -- so /imu published nothing at all.
+        q = norm(quat)
+        w, x, y, z = (float(c) / q for c in quat)
         msg.orientation.w = w
         msg.orientation.x = x
         msg.orientation.y = y

@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install what the pure modules need
-        run: pip install pytest numpy opencv-python-headless pyyaml
+        run: pip install pytest numpy opencv-python-headless pyyaml pyflakes
       - name: Run every suite
         run: |
           set -e
@@ -33,4 +33,7 @@ jobs:
             (cd "$pkg" && python -m pytest test -q) || failed=1
             echo "::endgroup::"
           done
+          echo "::group::undefined names"
+          ./check_names.sh || failed=1
+          echo "::endgroup::"
           exit $failed
