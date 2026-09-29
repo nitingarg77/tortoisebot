@@ -404,14 +404,56 @@ stop-on-exit) were already present in this script, and it still drove
 unattended for 90 s: the guard that was missing was the leash's length, not
 its presence.
 
+### The Humble TF path read, and a rate experiment staged (`8d1999a`)
+
+Follows the open question below: why `controller_server`'s buffer freezes,
+and whether 118 Hz `map → odom` is outrunning the listener. Read the source
+rather than guessed at it further (Nav2 1.1.20, geometry2 humble).
+
+The obvious theory — `controller_server`'s own executor is starved — does not
+fit the code. `Costmap2DROS` builds its TF listener with the single-argument
+`TransformListener` constructor, which gets its own node and its own
+dedicated thread, not `controller_server`'s executor, so nothing else should
+be competing for it.
+
+Except costmap work runs there too, traced link by link: `setTransform` ends
+in `testTransformableRequests`, which runs any newly-satisfiable request's
+callback on the calling thread; `tf2_ros::MessageFilter` registers one of
+these whenever a scan beats its transform; Humble has callback queues
+disabled, so `messageReady` calls `signalMessage` directly; `signalMessage` is
+the obstacle layer's whole `laserScanCallback`. On a loaded Pi, where scans
+often beat TF, the thread meant to feed the buffer instead spends its time
+running that callback — load-dependent the way the fault is, and it explains
+why `tf_watch.py`, a listener with no `MessageFilter` attached, never froze.
+One link further and the chain breaks: `bufferCloud`'s own timed lookup asks
+for `lidar → global_frame_` at the scan's own stamp, which the filter had
+already verified before firing, so it resolves immediately rather than
+blocking the thread on itself. Recorded as a coupling, not a deadlock;
+`MODULE.md` keeps the full trace and where it breaks.
+
+**Staged, not yet run.** `slam_real.lua`'s `pose_publish_period_sec`, 5e-3 →
+2e-2 (200 Hz → 50 Hz). The Pi was only managing 118 of the requested 200
+anyway (measured under `c106c62`), and nothing downstream consumes TF faster
+than `controller_frequency`'s 10 Hz, so this cuts `setTransform` work on the
+listener thread by more than half. It could also make things worse: a slower
+TF rate means scans beat their transform more often, sending more work down
+the same coupled path — 20 ms was chosen to keep that under a quarter of the
+~85 ms scan period. Unverified; needs `tf_watch.py` running alongside a live
+goal from `one_goal.py`, before and after, and reverting to 5e-3 if the hang
+gets worse.
+
 ### Open
 
-- **Why `controller_server`'s buffer freezes is still unknown.** `c57046f`
+- **Why `controller_server`'s buffer freezes is still unknown, though a
+  candidate mechanism is now traced in source (`8d1999a`).** `c57046f`
   confirms the freeze is inside that process (ruling out Cartographer) but not
-  why. Still needed: the simultaneous observation (this process's buffer
-  healthy while `controller_server`'s is frozen, in the same run), and a look
-  at whether 118 Hz `map → odom` — faster than the 66 Hz seen on 09-28 — is
-  outrunning the listener.
+  why. `8d1999a` traces a coupling through the Humble TF/costmap source — the
+  listener thread can be diverted into running the obstacle layer's scan
+  callback — and stages a rate change (`pose_publish_period_sec` 5e-3 → 2e-2)
+  to test it, but the experiment has not been run. Still needed: the
+  simultaneous observation (this process's buffer healthy while
+  `controller_server`'s is frozen, in the same run), and the before/after
+  `tf_watch.py` comparison with a live goal.
 - **The orphan-cleanup pattern misses `planner_server` from a previous
   launch.** A 1,356 s old process from an earlier run kept Nav2 from
   activating during the `c57046f` test; the pattern needs to match the launch
