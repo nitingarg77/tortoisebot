@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-29 — working standards from the 09-28 failures, and the audit against them
+## 2026-09-29 — working standards from the 09-28 failures, the audit against them, and CI written but not yet pushed
 
 ### Added
 
@@ -66,6 +66,63 @@ eight sections, including one where the standards file was itself wrong
 - **`__pycache__` was being committed.** Six `.pyc` files were tracked,
   including one for `floor_scan` that had turned up in an unrelated diff.
   Now covered by `.gitignore`.
+
+### The audit finished: four more modules tested (`2944d9c`)
+
+`379d6eb` (above) had cleared two of eight packages and left the
+safety-relevant logic untested; `2944d9c` finishes that audit. Four more
+modules, each pulled out of a node that could only be reached with a robot
+attached:
+
+- **`runaway.py`**, the pose-estimate runaway detector — the only thing that
+  stops a robot whose localisation has diverged, and it had no test at all.
+  Its judgement is a balance between two real events, both now pinned: the
+  0.33 m scan-matching snap of 09-25 must not trip it, and a 2 m in 2 s
+  runaway must. That is why speed is averaged over a window rather than taken
+  between samples.
+- **`scan_geometry.py`**, reading a scan by bearing. `cone()` is the function
+  whose misuse drove the robot 6.8 m on a request for 3 m (the deadband-test
+  failure CLAUDE.md section 2 is built on): pointed through a doorway while
+  the robot curved, it reported negative progress and the tool built on it
+  concluded the motors were dead. The tests encode that run; `is_usable_as_odometer()`
+  is the check that was missing.
+- **`sample_checks.py`**, the BNO055 gates that decide what reaches
+  Cartographer. They fire constantly, so both directions are tested: the
+  318 m/s² reading from the logs is rejected, and a real 1.2 rad/s spin is
+  not.
+- **`places.py`**, the course file. The built-in places are simulator
+  coordinates, so a real course is always a file a human typed and a typo
+  becomes a goal somewhere unintended; now rejects `.inf` and `.nan`, which
+  parse as floats and previously survived.
+
+`pose_watchdog.py`, `imu_node.py`, `nav_course.py`, `calibrate_drive.py` and
+`wheel_balance.py` now import these rather than carrying their own copies, so
+the tests cover the code that actually runs; the two drive tools keep a thin
+`LaserScan` adapter at the boundary, which is what lets the shared module need
+no ROS.
+
+`run_tests.sh` runs all of it — 167 tests — locally in about a second. The
+matching GitHub Actions workflow (`.github/workflows/tests.yml`) is written
+but was **not part of `2944d9c`**: pushing to `.github/workflows/` needs a
+token with `workflow` scope, which the one used for this commit does not
+have, so the file sits locally, untracked, pending a push with the right
+credentials. Until then the 167 tests only run when someone remembers to run
+`run_tests.sh`.
+
+`MODULE.md`'s "no CI and no tests beyond the default ament linters" is
+replaced with what the 167 tests actually cover and, more usefully, what they
+do not: pure modules, not running nodes. Nothing here exercises a live graph,
+so a node that hangs a costmap the way `floor_scan` hung `controller_server`
+(09-28, `5ca83df`) is still only found by driving the robot. CLAUDE.md section
+3 gains the same caveat, plus the rule that a new module goes into
+`run_tests.sh`/CI or it will rot.
+
+**Not verified on the robot.** It went offline mid-deploy and both SSH paths
+timed out, so the rewired nodes have not been built or run on hardware.
+`differential.py`, `floor_scan.py`, `pose_watchdog.py`, `imu_node.py` and
+`nav_course.py` all now import package modules, and with `--symlink-install` a
+pull without a rebuild puts the new sources live against modules that are not
+installed — both workspaces need a build on the robot before anything moves.
 
 ## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, a global costmap that discarded Cartographer's walls, and a drivetrain that curves under a straight command
 
