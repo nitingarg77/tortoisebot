@@ -330,7 +330,7 @@ both sources under *two* layers (`obstacle_layer` and `voxel_layer`), so
 `floor_scan` took the filter count from two to four. The A/B above is one run
 each, so treat the cause as indicated rather than proven.
 
-**Fix written, not yet run on the robot** (the robot was offline). Rather than
+**Fix written and half-verified on the robot** (2026-09-29). Rather than
 two sources, `scan_fusion_node.py` merges the camera into the lidar scan and
 publishes `/scan_fused`, which is now the only source on both costmaps. The
 decision logic is in `tortoisebot_navigation/scan_fusion.py`, which imports no
@@ -355,17 +355,29 @@ it:
   IMU's yaw — 200 ms at 1.2 rad/s smears the fan 13.8°. Translation over the
   same interval costs 2.6 cm, under one costmap cell, and is left uncorrected.
 
-What this does **not** yet show is whether it cures the hang. That needs a run
-on the robot. `scripts/check_fusion.py` covers the first half of it and
-commands no motion:
+Measured on the robot, 30 s with the drivers up and nothing navigating
+(`ros2 run tortoisebot_navigation check_fusion.py --seconds 30`):
 
-    ros2 run tortoisebot_navigation check_fusion.py --seconds 30
+| | |
+|---|---|
+| `/scan_fused` rate | 11.7 Hz, against `/scan`'s 11.6 Hz — no scans dropped |
+| Scans where the camera changed a beam | 306 of 315 (97%) |
+| Beams changed | 11,615, of which **5,907 were beams the lidar saw nothing on** |
+| Beams pushed *further* away | 0 |
 
-It asserts that `/scan_fused` keeps up with `/scan`, that the camera actually
-changes beams rather than the node being a passthrough, and that no beam is
-ever pushed *further* away. What it cannot arrange is the hang itself, which
-needs Nav2 up and a goal in flight; for that, run exploration for 20 minutes
-and watch whether `controller_server`'s `Transform time` advances.
+The 5,907 figure is the point of the whole node: those are returns only the
+camera produced, on a stationary robot in this building. The zero is the safety
+property — fusion only ever pulls a reading nearer. The node's own 30 s report
+agrees independently at 96-97%.
+
+The only degradation seen was `no yaw for a 0.08 s gap`, 5 times in ~700 scans
+(0.7%), which is the IMU history not spanning the interval and the fan being
+skipped rather than de-rotated wrongly. Working as designed.
+
+What this still does **not** show is whether it cures the hang, because that
+needs Nav2 up and a goal in flight, which the above deliberately did not have.
+For that: run exploration for 20 minutes and watch whether
+`controller_server`'s `Transform time` advances.
 
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.
