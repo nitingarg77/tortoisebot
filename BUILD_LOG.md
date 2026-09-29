@@ -178,6 +178,23 @@ on `/scan_fused` with `controller_server`'s `Transform time` watched. Sim is
 untouched: `nav2_params_simulation.yaml` keeps `/scan` and the node does not
 launch there, and Cartographer keeps the raw `/scan` either way.
 
+### A way to measure whether the fusion is doing anything was added (`49c68c4`)
+
+The open item above from `8a3e098` — whether `/scan_fused` cures the
+`controller_server` hang — still needs the robot, but three narrower
+questions under it did not: whether `/scan_fused` keeps up with `/scan`'s
+rate, whether the camera ever actually changes a beam rather than the node
+being a passthrough, and whether any beam is ever pushed *further* away,
+which is the safety property the whole fusion rule rests on — fusion is
+meant to only pull a reading nearer, and if it doesn't the costmap could be
+clearing real obstacles instead of adding them. `check_fusion.py` subscribes
+to `/scan` and `/scan_fused`, matches them by stamp, and asserts those three.
+It commands no motion, so it is safe to run while exploring. It cannot
+arrange the hang itself — that still needs Nav2 up, a goal in flight, and
+`controller_server`'s `Transform time` watched by eye — and is reported as a
+manual step rather than asserted. `MODULE.md` now points at it instead of
+just describing that manual step.
+
 ## 2026-09-28 — floor_scan: a second obstacle source for what the lidar can't see, why it hangs Nav2, a global costmap that discarded Cartographer's walls, and a drivetrain that curves under a straight command
 
 ### Faults found, and what was done
