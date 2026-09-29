@@ -19,17 +19,22 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Imu, LaserScan
 from rclpy.qos import qos_profile_sensor_data
 
+# Shared with the other drive tools and covered by
+# tortoisebot_navigation/test/test_scan_geometry.py. cone() in
+# particular: used as an odometer through a doorway it reported
+# negative progress and hid a 6.8 m overshoot.
+from tortoisebot_navigation.scan_geometry import nearest as _nearest
+
+
+def nearest(scan):
+    """LaserScan wrapper. Returns inf for a missing or empty scan,
+    so a guard cannot read 'saw nothing' as 'touching something'."""
+    return float('inf') if scan is None else _nearest(scan.ranges)
+
 L = 0.17
 WHEEL = 0.15          # m/s asked of the moving wheel
 BURST = 2.0
 GUARD = 0.35
-
-
-def nearest(scan):
-    if scan is None:
-        return 99.0
-    rs = [r for r in scan.ranges if r == r and 0 < r < 50]
-    return min(rs) if rs else 99.0
 
 
 rclpy.init()

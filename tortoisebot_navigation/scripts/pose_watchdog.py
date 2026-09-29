@@ -13,7 +13,6 @@ explorer, cancels every Nav2 NavigateToPose goal, and publishes zero cmd_vel,
 then stays tripped until ~/reset is called.
 """
 
-import math
 
 import time
 
@@ -32,6 +31,9 @@ try:
     from frontier_exploration_ros2.srv import ControlExploration
 except ImportError:                      # explorer not built on this machine
     ControlExploration = None
+
+
+from tortoisebot_navigation.runaway import RunawayDetector
 
 
 class PoseWatchdog(Node):
@@ -65,13 +67,20 @@ class PoseWatchdog(Node):
                             if ControlExploration else None)
         self.create_service(Trigger, '~/reset', self.on_reset)
 
-        self.samples = []        # (time_s, x, y)
-        self.tripped = False
+        # The trip logic lives in tortoisebot_navigation.runaway, which needs
+        # no ROS and is covered by test/test_runaway.py. This is the only thing
+        # that stops a robot whose localisation has diverged, and it had no
+        # test at all while it lived here.
+        self.detector = RunawayDetector(self.max_speed, self.window)
         self.stop_ticks = 0
         self.create_timer(1.0 / rate_hz, self.tick)
         self.get_logger().info(
             f'watching {self.odom_frame}->{self.base_frame}, '
             f'tripping above {self.max_speed:.2f} m/s over {self.window:.1f} s')
+
+    @property
+    def tripped(self):
+        return self.detector.tripped
 
     def tick(self):
         if self.tripped:
@@ -90,23 +99,12 @@ class PoseWatchdog(Node):
             return
         t = Time.from_msg(tf.header.stamp).nanoseconds * 1e-9
         p = tf.transform.translation
-        if self.samples and t <= self.samples[-1][0]:
-            return                               # no new transform yet
-        self.samples.append((t, p.x, p.y))
-        while self.samples and t - self.samples[0][0] > self.window:
-            self.samples.pop(0)
-
-        t0, x0, y0 = self.samples[0]
-        if t - t0 < 0.5 * self.window:
-            return
-        speed = math.hypot(p.x - x0, p.y - y0) / (t - t0)
-        if speed > self.max_speed:
-            self.trip(speed, p.x, p.y)
+        if self.detector.update(t, p.x, p.y):
+            self.trip(self.detector.trip_speed, p.x, p.y)
             return
         self.tripped_pub.publish(Bool(data=False))
 
     def trip(self, speed, x, y):
-        self.tripped = True
         self.stop_ticks = 20
         self.get_logger().error(
             f'pose estimate moving at {speed:.2f} m/s (limit {self.max_speed:.2f}) '
@@ -124,8 +122,7 @@ class PoseWatchdog(Node):
             self.get_logger().warn('Nav2 cancel service not available')
 
     def on_reset(self, request, response):
-        self.tripped = False
-        self.samples.clear()
+        self.detector.reset()
         self.get_logger().info('reset: watching again')
         response.success = True
         response.message = 'watchdog re-armed'

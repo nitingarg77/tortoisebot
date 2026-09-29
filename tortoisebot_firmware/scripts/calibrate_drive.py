@@ -23,22 +23,24 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Imu, LaserScan
 from rclpy.qos import qos_profile_sensor_data
 
+# Shared with the other drive tools and covered by
+# tortoisebot_navigation/test/test_scan_geometry.py. cone() in
+# particular: used as an odometer through a doorway it reported
+# negative progress and hid a 6.8 m overshoot.
+from tortoisebot_navigation.scan_geometry import cone as _cone
+
+
+def cone(scan, centre_deg, half=8.0, reducer='min'):
+    """LaserScan wrapper. 'min' by default: these are guard
+    readings, and the nearest thing in the cone is what is hit."""
+    if scan is None:
+        return None
+    return _cone(scan.ranges, scan.angle_min, scan.angle_increment,
+                 centre_deg, half, reducer)
+
 SPEED = 0.15
 GUARD = 0.60
 LEG_TIMEOUT = 60.0
-
-
-def cone(scan, centre_deg, half=8):
-    if scan is None:
-        return None
-    rs = []
-    for i, r in enumerate(scan.ranges):
-        if not (0 < r < 50) or r != r:
-            continue
-        a = math.degrees(scan.angle_min + i * scan.angle_increment)
-        if abs((a - centre_deg + 180) % 360 - 180) <= half:
-            rs.append(r)
-    return sorted(rs)[len(rs) // 2] if rs else None
 
 
 class Rig:

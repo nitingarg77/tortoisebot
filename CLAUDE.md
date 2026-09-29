@@ -92,6 +92,12 @@ against a second bearing.
   this — its 19 counting tests run on synthetic frames with no camera.
 - A bug found on hardware that could have been found at a desk should come with
   the test that would have found it.
+- **Tests that nobody runs are not tests.** `./run_tests.sh` runs every suite in
+  about a second, and CI runs the same set on every push. A new module goes in
+  that list or it will rot.
+- Know what this does *not* cover: the suites test pure modules, not running
+  nodes. Nothing here exercises a live graph, so a node that hangs a costmap or
+  starves a callback is still found by driving the robot.
 
 ## 4. Concurrency and determinism
 

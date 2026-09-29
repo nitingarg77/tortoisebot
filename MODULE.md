@@ -337,4 +337,10 @@ zero rotation, so bearings map straight across.
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.
 
-**No CI and no tests** beyond the default ament linters.
+**Tests cover the logic, not the nodes.** 167 tests run without a robot,
+ROS or hardware (`./run_tests.sh`, and CI on every push), but they cover the
+pure modules -- `motor_math`, `floor_geometry`, `scan_geometry`, `runaway`,
+`places`, `sample_checks` -- rather than the nodes that use them. Nothing
+exercises a running graph: no launch tests, no costmap under a synthetic scan,
+nothing that would have caught `floor_scan` hanging `controller_server`. That
+class of bug is still found by driving the robot into something.

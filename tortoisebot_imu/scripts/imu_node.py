@@ -15,6 +15,9 @@ from rclpy.node import Node
 from sensor_msgs.msg import Imu
 
 
+from tortoisebot_imu.sample_checks import Rejected, check_sample
+
+
 class ImuPublisher(Node):
 
     def __init__(self):
@@ -128,13 +131,6 @@ class ImuPublisher(Node):
             f'wrote calibration offsets accel={tuple(accel)} '
             f'gyro={tuple(gyro)} mag={tuple(mag)}')
 
-    @staticmethod
-    def _complete(reading, length):
-        """True if the sensor returned a full tuple with no None entries."""
-        return (reading is not None
-                and len(reading) == length
-                and all(v is not None for v in reading))
-
     def publish_imu_data(self):
         quat = self.sensor.quaternion
         gyro = self.sensor.gyro
@@ -146,29 +142,17 @@ class ImuPublisher(Node):
         # direction to align its 2D frame to.
         accel = self.sensor.acceleration
 
-        if not (self._complete(quat, 4) and self._complete(gyro, 3)
-                and self._complete(accel, 3)):
-            self.get_logger().warn('incomplete BNO055 read, skipping sample',
+        # The gates are in tortoisebot_imu.sample_checks, which needs neither
+        # ROS nor the sensor and is covered by test/test_sample_checks.py.
+        # They decide what reaches Cartographer and they fire constantly, so
+        # being wrong in either direction costs something: too loose poisons
+        # the gravity alignment, too tight starves the filter.
+        try:
+            check_sample(quat, gyro, accel,
+                         self.max_accel_norm, self.max_gyro_norm)
+        except Rejected as why:
+            self.get_logger().warn(f'{why}, skipping sample',
                                    throttle_duration_sec=5.0)
-            return
-
-        # The BNO055 returns an all-zero quaternion while the fusion algorithm
-        # is still converging. Publishing that would hand every consumer an
-        # invalid rotation, so skip the sample instead.
-        norm = math.sqrt(sum(float(c) ** 2 for c in quat))
-        if abs(norm - 1.0) > 0.1:
-            self.get_logger().warn(
-                f'BNO055 returned a non-unit quaternion (norm {norm:.3f}), '
-                'skipping sample', throttle_duration_sec=5.0)
-            return
-
-        accel_norm = math.sqrt(sum(float(c) ** 2 for c in accel))
-        gyro_norm = math.sqrt(sum(float(c) ** 2 for c in gyro))
-        if accel_norm > self.max_accel_norm or gyro_norm > self.max_gyro_norm:
-            self.get_logger().warn(
-                f'BNO055 returned an implausible reading (|accel| '
-                f'{accel_norm:.1f} m/s^2, |gyro| {gyro_norm:.2f} rad/s), '
-                'skipping sample', throttle_duration_sec=5.0)
             return
 
         msg = Imu()

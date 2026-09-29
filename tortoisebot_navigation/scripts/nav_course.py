@@ -27,6 +27,10 @@ import time
 
 import yaml
 
+from tortoisebot_navigation.places import (
+    BadPlaces, parse_places, quaternion_from_yaw, yaw_from_quaternion,
+)
+
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -47,17 +51,20 @@ ORDER = ['kitchen', 'living_room', 'bedroom', 'hallway', 'charging_dock']
 
 
 def load_places(path):
-    """Read {name: [x, y, yaw]} from a YAML file, keeping its order."""
-    with open(path) as f:
-        data = yaml.safe_load(f) or {}
-    places = {}
-    for name, value in data.items():
-        if not (isinstance(value, (list, tuple)) and len(value) == 3):
-            sys.exit(f'{path}: {name} should be [x, y, yaw], got {value!r}')
-        places[name] = tuple(float(v) for v in value)
-    if not places:
-        sys.exit(f'{path}: no places in it')
-    return places, list(places)
+    """Read {name: [x, y, yaw]} from a YAML file, keeping its order.
+
+    The parsing and its validation are in tortoisebot_navigation.places, which
+    needs no ROS and is covered by test/test_places.py. A typo here becomes a
+    goal somewhere unintended, and on this robot that means driving into
+    something the lidar cannot see.
+    """
+    try:
+        with open(path) as f:
+            return parse_places(f.read(), source=path)
+    except OSError as e:
+        sys.exit(f'{path}: {e.strerror}')
+    except BadPlaces as e:
+        sys.exit(str(e))
 
 
 STATUS = {GoalStatus.STATUS_SUCCEEDED: 'SUCCEEDED',
@@ -97,8 +104,8 @@ class Course(Node):
         goal.pose.header.stamp = self.get_clock().now().to_msg()
         goal.pose.pose.position.x = x
         goal.pose.pose.position.y = y
-        goal.pose.pose.orientation.z = math.sin(yaw / 2)
-        goal.pose.pose.orientation.w = math.cos(yaw / 2)
+        (goal.pose.pose.orientation.z,
+         goal.pose.pose.orientation.w) = quaternion_from_yaw(yaw)
         return goal
 
     def run_goal(self, place):
@@ -131,8 +138,7 @@ class Course(Node):
         if self.pose is None:
             return None
         q = self.pose.orientation
-        yaw = math.atan2(2 * (q.w * q.z + q.x * q.y),
-                         1 - 2 * (q.y ** 2 + q.z ** 2))
+        yaw = yaw_from_quaternion(q.x, q.y, q.z, q.w)
         return self.pose.position.x, self.pose.position.y, yaw
 
 
