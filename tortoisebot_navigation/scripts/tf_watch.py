@@ -90,7 +90,15 @@ def main():
     ap.add_argument('--seconds', type=float, default=120.0)
     ap.add_argument('--parent', default='map')
     ap.add_argument('--child', default='odom')
+    # One row per second: wall time, this buffer's newest stamp, the newest
+    # stamp seen on the wire, raw message count. Lets this process be lined up
+    # against controller_server's "Transform time" on the same clock, which is
+    # the simultaneous observation the whole exercise needs.
+    ap.add_argument('--csv', default=None)
     args = ap.parse_args()
+    csv = open(args.csv, 'w') if args.csv else None
+    if csv:
+        csv.write('wall,buffer_newest,wire_newest,raw_count\n')
 
     rclpy.init()
     n = Watch(args.parent, args.child)
@@ -99,6 +107,10 @@ def main():
 
     samples = []                       # (wall, buffer_newest, raw_count)
     last_buf, frozen_since, worst_freeze = None, None, 0.0
+    # How far the wire's newest stamp ran ahead of this buffer during the
+    # worst freeze. Measured while frozen, so a freeze that later recovers is
+    # still judged on what happened during it.
+    worst_wire_gap = 0.0
     raw_at_freeze = None
     end = time.time() + args.seconds
     try:
@@ -108,7 +120,13 @@ def main():
             if samples and now - samples[-1][0] < 1.0:
                 continue
             b = n.buffer_newest()
-            samples.append((now, b, n.raw_count))
+            samples.append((now, b, n.raw_count, n.raw_newest))
+            if csv:
+                csv.write('%.3f,%s,%s,%d\n' % (
+                    now, '%.3f' % b if b is not None else '',
+                    '%.3f' % n.raw_newest if n.raw_newest is not None else '',
+                    n.raw_count))
+                csv.flush()
 
             if b is not None and b == last_buf:
                 if frozen_since is None:
@@ -116,10 +134,13 @@ def main():
                 held = now - frozen_since
                 if held > worst_freeze:
                     worst_freeze = held
+                    if n.raw_newest is not None:
+                        worst_wire_gap = n.raw_newest - b
                 if held > 3.0 and int(held) % 5 == 0:
                     print('  FROZEN %5.1f s at stamp %.3f  |  raw /tf '
-                          'map->odom since freeze: %d'
-                          % (held, b, n.raw_count - raw_at_freeze))
+                          'map->odom since freeze: %d, newest wire stamp %s'
+                          % (held, b, n.raw_count - raw_at_freeze,
+                             '%.3f' % n.raw_newest if n.raw_newest else '-'))
             else:
                 if frozen_since is not None and now - frozen_since > 3.0:
                     print('  recovered after %.1f s' % (now - frozen_since))
@@ -148,8 +169,14 @@ def main():
               'is inside that process -- its listener is not being served, '
               'which is explanation (b) in MODULE.md.')
     else:
-        # Did the wire keep moving while this buffer stood still?
-        moved = any(s[2] > samples[i][2] for i, s in enumerate(samples[1:]))
+        # Did the wire keep moving while this buffer stood still? Judged by
+        # STAMPS, not message count: a publisher that repeats one stamp at full
+        # rate would otherwise read as healthy. Cartographer with
+        # use_pose_extrapolator (its default) suppresses repeated stamps, so on
+        # this robot the two agree -- but that is its config, not a law.
+        moved = worst_wire_gap > 1.0
+        print('wire ran ahead of this buffer by %.1f s during that freeze'
+              % worst_wire_gap)
         if moved:
             print('\nThe wire kept delivering while THIS buffer froze for '
                   '%.1f s. A freeze reproduces in an ordinary listener, so it '
@@ -162,6 +189,8 @@ def main():
                   'listener problem at all.')
         rc = 1
 
+    if csv:
+        csv.close()
     n.destroy_node()
     if rclpy.ok():
         rclpy.shutdown()
