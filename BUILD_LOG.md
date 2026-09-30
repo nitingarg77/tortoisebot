@@ -156,13 +156,28 @@ purpose and watch for the freeze; not yet run.
   `/proc` — state, wait channel, syscall, CPU — to show whether the stuck
   thread is waiting on a lock or for data.
 
+### join1 stopped at the motion lock before any probe, and the retry that was added (`401308b`)
+
+Running `tf_join_launch.sh` (`f1dc10c`, above) for the first time, join1
+stopped at its own motion lock, as designed: `max_velocity` read back
+unchanged at `[0.15, 0.0, 1.5]` while `min_velocity` had landed, so the
+script's final check refused to send a probe and nothing moved. The velocity
+smoother's callback accepts `max_velocity` without condition, so the
+`ros2 param set` most likely never reached the node — with the CLI daemon
+stopped, each call rediscovers the graph from scratch on a loaded Pi, and the
+first attempt can miss it. The script now sets and reads back each parameter
+up to three times, logging the set's own output instead of discarding it,
+before falling through to the same refuse-to-probe check as before. Not yet
+re-run.
+
 ### Open
 
-- **The `/tf` subscriber join/leave correlation is untested as a cause.**
-  Four of four observed freezes followed one within ~1-8 s, but most such
-  events trigger nothing. The tooling to join and leave `/tf` subscribers on
-  purpose, with no goals at all, now exists (`f1dc10c`, above) but has not yet
-  been run.
+- **The `/tf` subscriber join/leave correlation is still untested as a
+  cause.** Four of four observed freezes followed one within ~1-8 s, but most
+  such events trigger nothing. The tooling exists (`f1dc10c`, above); its
+  first run, join1, stopped at the motion lock before sending a single probe
+  because `max_velocity` had not landed, and `401308b` adds a retried
+  set-and-read-back for that reason. Still not yet run past the lock.
 - **`tf_ab_launch.sh`'s 450 s `tf_watch` window doesn't cover the late probe.**
   before2's freeze fell in that uncovered window; needs at least 520 s to give
   the late probes independent coverage too.
