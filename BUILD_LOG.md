@@ -41,6 +41,13 @@ had not been run. `d4a3ce8` builds the tooling to run it; no A/B result yet.
   2 of CLAUDE.md, killing the launching process does not stop a goal Nav2
   already holds.
 
+### Fault found starting the harness, and what was done
+
+`tf_ab_launch.sh` died on its first real line before anything ran: ROS's
+`setup.bash` reads `AMENT_TRACE_SETUP_FILES` unset, which `set -u` treats as
+an error. `acf7053` turns `-u` off for the two `source` lines and back on
+after. Nothing had started, so nothing moved; the A/B still has not been run.
+
 ### Correction recorded, not yet applied to `MODULE.md`
 
 `MODULE.md` currently says `tf_watch.py` "ruled out" Cartographer (from
