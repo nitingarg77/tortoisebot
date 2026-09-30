@@ -35,8 +35,11 @@ NAV=~/tb_ws/install/tortoisebot_navigation/lib/tortoisebot_navigation
 META=$D/$TAG.meta
 : > "$META"
 
+# ROS's setup scripts read unset variables, so -u is off while they run.
+set +u
 source /opt/ros/humble/setup.bash
 source ~/tb_ws/install/setup.bash
+set -u
 
 note() { echo "$(date +%s.%N) $*" | tee -a "$META"; }
 
