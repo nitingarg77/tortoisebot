@@ -564,6 +564,54 @@ The leash and the cancel-all stopped every one.
   `controller_server`'s own stale-TF lines, which do not depend on it. The same
   IMU feeds `scan_fusion`'s yaw correction and Cartographer.
 
+### The join/leave test, first result (2026-09-30)
+
+`scripts/tf_join_launch.sh` + `tf_join_probe.py`: Nav2 up with motion locked
+out (velocity_smoother max/min_velocity set to zero and read back, and
+`/cmd_vel_nav` confirmed to have no other reader), then `controller_server`
+probed every 10 s through its own FollowPath action — the only detector, since
+a frozen controller logs nothing while idle — first quietly, then with
+processes joining and leaving the graph on a schedule.
+
+- **join1** stopped at the motion lock, as designed: `max_velocity` read back
+  unchanged and no probe was sent. The set had never reached the node — with
+  the CLI daemon stopped, `ros2 param` reported `Node not found` and
+  `Wait for service timed out` on first attempts. Now retried with read-back.
+- **join2** was frozen at its first probe, before the quiet phase began. The
+  frozen Transform time, `…055.741`, falls inside the retried `ros2 param
+  set/get` calls of the motion lock (~`…041`–`…057`). That is a fifth freeze
+  within seconds of a participant joining or leaving — and this participant,
+  a `ros2 param` CLI node, has **no `/tf` subscription at all**. One point
+  against "/tf matching specifically", for participant discovery in general.
+  Still a correlation.
+
+**Thread snapshot of the frozen `controller_server`** (`/proc`, 16 threads,
+two samples 7 s apart; aarch64 syscall 98 = futex, 207 = recvfrom): one thread
+had used 3.2 s of CPU and then used **none**, parked in `futex_wait`, while the
+two Fast DDS receive threads stayed active in `recvfrom` — packets were still
+reaching the process. A healthy TF listener wakes on every message at 60+ Hz,
+so a thread that worked and then went fully idle mid-stream is the candidate
+stalled listener. What `/proc` cannot say is why: an executor idly waiting for
+data also sits in `futex_wait`, so "blocked on a lock" and "never handed
+another sample" look the same from here. A backtrace would settle it; no
+debugger is installed on the robot.
+
+**Design flaw for the next run:** the motion lock's own CLI calls are
+join/leave events, and the freeze can happen during them, so the quiet phase
+is never reached. The caps should be set and verified from inside the one
+long-lived probe process instead.
+
+**Working hypothesis, not established:** `/tf` is RELIABLE, KEEP_LAST.
+`controller_server`'s listener is a slow reader — the Humble source puts the
+obstacle layer's scan callback on that same thread — and a burst of discovery
+traffic when a participant joins or leaves could make it slower still. If the
+writer's history overwrites samples that reader has not acknowledged and the
+reliable stream then fails to recover past the gap, delivery to that one
+reader would stop permanently while fast readers carry on. That would fit
+everything seen so far: load-dependent, near join/leave events, one reader
+only, never recovers. It is a guess about Fast DDS internals and needs either
+a backtrace or a change of DDS implementation to test.
+
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.
 
