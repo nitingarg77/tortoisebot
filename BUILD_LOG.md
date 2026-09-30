@@ -6,6 +6,63 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
+## 2026-09-30 — tooling for the TF-rate A/B, harness built but not yet run
+
+Follows 09-29's open item: `8d1999a` staged `slam_real.lua`'s
+`pose_publish_period_sec` change (5e-3 → 2e-2) to test whether Cartographer's
+TF rate is starving `controller_server`'s listener thread, but the experiment
+had not been run. `d4a3ce8` builds the tooling to run it; no A/B result yet.
+
+### Built (`d4a3ce8`)
+
+- **`one_goal.py --turn DEG`** rotates in place instead of driving. The freeze
+  needs no translation — `isGoalReached()` looks up `map → odom` on every
+  control cycle of any goal — and +90 then -90 returns the robot to its start,
+  so the comparison can be repeated from one spot instead of walking the robot
+  across the room. Guards: nearest return in any direction ≥ 0.35 m to turn
+  (abort under 0.20), the turn verified from the IMU's fused yaw rather than
+  TF (TF is what is under test), and a 21 s leash for 90°. Emits a `RESULT`
+  line for a harness to grep. Also fixes a `TypeError` the result print would
+  have thrown whenever nothing was ahead.
+- **`tf_watch.py`** now judges a freeze by stamps rather than message count —
+  a publisher repeating one stamp at full rate would otherwise read as
+  healthy — measured during the freeze rather than at the end, and can write
+  a per-second CSV so its buffer can be lined up against
+  `controller_server`'s `Transform time` on one clock. Checked against the
+  Cartographer ROS 2 source: with `use_pose_extrapolator` (default true, not
+  overridden here) every published TF is stamped and repeats are suppressed,
+  so on this robot count and stamps agree — but that is a config, not a law.
+- **`tf_ab_launch.sh`**, new: runs one launch on the robot, sets the rate and
+  checks it landed in the *installed* file, brings up Nav2, soaks 7.5 min with
+  `tf_watch.py` recording, probes with paired ±90° turns early and at ~9 min
+  (when the 09-29 freeze began), tears down and verifies nothing survived.
+  After every probe and at teardown it cancels all goals via the action's
+  cancel service, which does not depend on the client surviving — per section
+  2 of CLAUDE.md, killing the launching process does not stop a goal Nav2
+  already holds.
+
+### Correction recorded, not yet applied to `MODULE.md`
+
+`MODULE.md` currently says `tf_watch.py` "ruled out" Cartographer (from
+`c106c62`/`c57046f`, 09-29). That run had no freeze anywhere in its window, so
+it shows Cartographer healthy in a quiet window, not innocent during a
+freeze — only a simultaneous run, during an actual freeze, can say that. The
+commit records the correction; `MODULE.md`'s wording itself was not part of
+this diff.
+
+### Open
+
+- **The TF-rate A/B itself has not been run.** The harness now exists
+  (`d4a3ce8`); the 09-29 open item — whether `pose_publish_period_sec` 5e-3 →
+  2e-2 changes the freeze — is still unanswered.
+- **`MODULE.md`'s "ruled out Cartographer" line needs correcting** per the
+  note above — it was true of a quiet window, not a simultaneous
+  freeze-vs-buffer observation.
+- Everything else carried from 09-29 (why `controller_server`'s buffer
+  freezes, the orphan-cleanup pattern missing `planner_server`, the camera's
+  contribution only measured stationary, CI not on the default branch, tests
+  covering logic but not running nodes) is unchanged by this commit.
+
 ## 2026-09-29 — working standards from the 09-28 failures, the audit against them, CI pushed over SSH, the camera fused into the lidar scan, and a silent /imu outage the refactor left behind
 
 ### Added
