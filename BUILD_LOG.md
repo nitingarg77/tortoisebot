@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-30 — the TF-rate A/B: built, run, found not to be a fix, reverted, and the join/leave test built, run past the lock, and its first freeze snapshotted
+## 2026-09-30 — the TF-rate A/B: built, run, found not to be a fix, reverted, the join/leave test built, run past the lock, its first freeze snapshotted, and the freeze backtraced to an ABBA deadlock in tf2 0.25.23
 
 Follows 09-29's open item: `8d1999a` staged `slam_real.lua`'s
 `pose_publish_period_sec` change (5e-3 → 2e-2) to test whether Cartographer's
@@ -215,27 +215,56 @@ Two all-thread backtraces are taken 5 s apart (`info threads` plus
 network symbol lookups. Wired into `main()` right after the two
 `threads_frozen` snapshots. Not yet run against a real freeze.
 
+### Caught and backtraced: an ABBA deadlock in tf2 0.25.23 (`f05d89a`)
+
+join3 froze in its stimulus phase, 2.6 s after a plain participant joined, and
+was backtraced twice, 5 s apart, using `f6b2a1d`'s gdb step above. Against a
+healthy baseline taken 6 minutes earlier, exactly two threads that had been
+busy went to zero CPU, and both were blocked **acquiring** mutexes —
+`futex_wait(expected=2)` under `pthread_mutex_lock`, not the condition-variable
+wait an idle executor shows:
+
+| thread | where it is stuck |
+|---|---|
+| the TF listener's dedicated thread | `setTransform` → `testTransformableRequests` → Buffer's callback → lock `timer_to_request_map_mutex_` |
+| the costmap's executor thread | obstacle layer `LaserScan` → `Buffer::waitForTransform` → `addTransformableRequest` → lock `transformable_requests_mutex_` |
+
+At the installed tf2 version, 0.25.23, `testTransformableRequests` holds
+`transformable_requests_mutex_` while invoking callbacks, and
+`waitForTransform` holds `timer_to_request_map_mutex_` while calling
+`addTransformableRequest` — opposite lock order on two threads, each holding
+what the other wants. The listener thread never inserts another transform,
+and nothing throws, so nothing is logged.
+
+Fixed upstream in geometry2 `9997e9695` on `humble` (2026-09-10, "Fix ABBA
+deadlock between `waitForTransform` and `testTransformableRequests`",
+backport of #982), released as tf2 0.25.24. Robot and box both run 0.25.23;
+apt's candidate is still 0.25.23.
+
+This accounts for every earlier observation in this entry: permanent and
+silent, since a deadlock does not recover and logs nothing; only a buffer with
+a `MessageFilter` can deadlock, which is why `tf_watch.py` never froze; a
+race, so load-dependent; a second observation source doubles
+`waitForTransform` registrations, so the 09-28 two-source A/B measured real
+odds rather than the whole cause; the five-of-five join/leave correlation is
+discovery load shifting timing, not a DDS fault; and the TF-rate A/B was
+noise. It resolves the two open items this entry had been carrying above:
+whether the stuck thread was blocked on a lock or never handed data — a
+lock — and the join/leave correlation, now explained as timing rather than a
+cause of its own.
+
+**Where the reasoning went wrong, so it is not repeated.** On 09-29 the Humble
+tf2 source was searched for exactly this kind of lock inversion and none was
+found, because the branch head already carried the fix — the code read was
+not the code running. CLAUDE.md gains a rule: read the source of the version
+that is installed (`dpkg -l`, then the source at that release), not the
+branch head.
+
+`tf_join_launch.sh` also now wraps every `ros2` CLI call in `timeout`: join3
+sat 294 s in one `ros2 param get` with no output before being killed by hand.
+
 ### Open
 
-- **The `/tf` subscriber join/leave correlation is still untested as a
-  cause, and the test tooling itself needs a fix.** Five of five observed
-  freezes have now followed a participant joining or leaving within seconds,
-  including one, `6cbfb71` above, with no `/tf` subscription at all — a point
-  toward participant discovery in general rather than `/tf` matching
-  specifically, but still a correlation. `f1dc10c`'s quiet phase has not yet
-  been reached: `6cbfb71` found the motion lock's own `ros2 param` calls are
-  themselves join/leave events, so the freeze happens before the quiet phase
-  starts. Next: set and verify the velocity caps from inside the long-lived
-  probe process rather than via separate CLI calls, so the lock stops
-  generating the stimulus under test.
-- **Whether the stuck thread is blocked on a lock or never handed data is
-  still open.** `6cbfb71`'s `/proc` snapshot shows one thread went from 3.2 s
-  of CPU to none, parked in `futex_wait`, while Fast DDS receive threads
-  stayed active — consistent with either. `f6b2a1d` (above) adds the gdb
-  backtrace that could distinguish the two, now that gdb is installed on the
-  robot, but it has not yet caught a live freeze. Alternative: test the
-  working hypothesis directly — a reliable `/tf` reader failing to recover
-  past overwritten samples — which would need a change of DDS implementation.
 - **`tf_ab_launch.sh`'s 450 s `tf_watch` window doesn't cover the late probe.**
   before2's freeze fell in that uncovered window; needs at least 520 s to give
   the late probes independent coverage too.
