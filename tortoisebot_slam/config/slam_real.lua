@@ -43,28 +43,13 @@ options = {
   num_point_clouds = 0,
   lookup_transform_timeout_sec = 0.2,
   submap_publish_period_sec = 0.3,
-  -- 50 Hz, down from 5e-3 (200 Hz). MEASURED 2026-09-30: NOT A FIX for the
-  -- controller_server freeze -- 1 of 2 launches froze at 50 Hz against 2 of 2
-  -- at 200 Hz, which at n=2 is noise (MODULE.md, "The TF-rate A/B"). No harm
-  -- was seen either. Kept or reverted on other grounds; the reasoning that
-  -- motivated it follows.
-  --
-  -- controller_server's map->odom buffer freezes at one timestamp while
-  -- map->odom stays healthy on the wire (tf_watch.py: 118 Hz, and an ordinary
-  -- listener never froze). 200 Hz was asked for and the Pi managed 118, with
-  -- provide_odom_frame publishing two transforms each time, into six listeners.
-  -- Nothing consumes it that fast: controller_frequency is 10 Hz, the costmaps
-  -- update at 5 and 1 Hz with a 1.0 s transform_tolerance.
-  --
-  -- Why it could make things WORSE, from the Humble source: each listener
-  -- services tf2_ros::MessageFilter callbacks on its own dedicated thread, and
-  -- with callback queues disabled the obstacle layer's whole scan callback runs
-  -- there whenever a scan arrives before its transform. A slower TF rate makes
-  -- that more frequent. 20 ms between samples keeps it bounded -- under a
-  -- quarter of the 85 ms scan period -- while cutting TF inserts on that same
-  -- thread by more than half. Whether the trade is a win is for the robot to
-  -- say; see MODULE.md. Revert to 5e-3 if the hang gets worse.
-  pose_publish_period_sec = 2e-2,
+  -- 200 Hz, Cartographer's upstream default. 2e-2 (50 Hz) was tried on
+  -- 2026-09-30 as a fix for the controller_server TF freeze and did not
+  -- prevent it (1 of 2 launches froze at 50 Hz, 2 of 2 at 200 Hz; noise at
+  -- n=2), with no measurable difference in load either. Reverted so this
+  -- matches every earlier observation of the freeze. MODULE.md, "The TF-rate
+  -- A/B", has the runs and the reasoning.
+  pose_publish_period_sec = 5e-3,
   trajectory_publish_period_sec = 30e-3,
   rangefinder_sampling_ratio = 1.,
   odometry_sampling_ratio = 1.,

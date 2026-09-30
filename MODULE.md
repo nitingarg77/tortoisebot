@@ -513,7 +513,10 @@ in-place turns — two early, two about 9 minutes after launch.
 | after2 | 50 Hz | **yes**, 457.5 s, never recovered | 87 s after active | ≤ 1.05 s stale |
 
 **2 of 2 froze at 200 Hz, 1 of 2 at 50 Hz. At n=2 that difference is noise, and
-the rate change does not prevent the freeze.** Actual map->odom on the wire was
+the rate change does not prevent the freeze.** Load was indistinguishable too
+(end-of-run load average 13.6–14.7 at both rates), so with no measured benefit
+the config was **reverted to 5e-3** — every earlier observation of the freeze
+was made at 200 Hz, and the next test should be as well. Actual map->odom on the wire was
 59–88 Hz when 200 was asked for and 32–34 Hz for 50: Cartographer never met
 either request on this Pi.
 
