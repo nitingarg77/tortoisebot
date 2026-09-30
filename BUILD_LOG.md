@@ -6,13 +6,14 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-30 — tooling for the TF-rate A/B, harness built but not yet run
+## 2026-09-30 — the TF-rate A/B: built, run, and found not to be a fix
 
 Follows 09-29's open item: `8d1999a` staged `slam_real.lua`'s
 `pose_publish_period_sec` change (5e-3 → 2e-2) to test whether Cartographer's
 TF rate is starving `controller_server`'s listener thread, but the experiment
 had not been run. `d4a3ce8` builds the tooling to run it; `287fe62` adds the
-tooling to read the result; no A/B result yet.
+tooling to read the result; `acf7053` fixes a harness crash; `491a7cc` runs
+the A/B and finds the rate change does not prevent the freeze.
 
 ### Built (`d4a3ce8`)
 
@@ -59,28 +60,82 @@ tooling to read the result; no A/B result yet.
 an error. `acf7053` turns `-u` off for the two `source` lines and back on
 after. Nothing had started, so nothing moved; the A/B still has not been run.
 
-### Correction recorded, not yet applied to `MODULE.md`
+### Correction recorded, and now applied to `MODULE.md` (`491a7cc`)
 
-`MODULE.md` currently says `tf_watch.py` "ruled out" Cartographer (from
-`c106c62`/`c57046f`, 09-29). That run had no freeze anywhere in its window, so
-it shows Cartographer healthy in a quiet window, not innocent during a
-freeze — only a simultaneous run, during an actual freeze, can say that. The
-commit records the correction; `MODULE.md`'s wording itself was not part of
-this diff.
+`MODULE.md` said `tf_watch.py` "ruled out" Cartographer (from `c106c62`/
+`c57046f`, 09-29). That run had no freeze anywhere in its window, so it showed
+Cartographer healthy in a quiet window, not innocent during a freeze — only a
+simultaneous run, during an actual freeze, can say that. `491a7cc` applies the
+correction to `MODULE.md` itself, backed by the simultaneous observation from
+the A/B run below: Cartographer (a) is ruled out for the two freezes actually
+watched, not in general.
+
+### The A/B run, and what it found (`491a7cc`)
+
+Four launches, alternating 200 Hz and 50 Hz, identical protocol via
+`tf_ab_launch.sh`: Nav2 up with `/scan_fused` as the single observation
+source, a 7.5 min soak with `tf_watch.py` tracing an independent buffer, and
+turns probed early and again ~9 min in.
+
+| launch | rate | result |
+|---|---|---|
+| before1 | 200 Hz | froze 52 s after active, 437.8 s, never recovered |
+| after1 | 50 Hz | clean, 0 stale-TF lines in 7.5 min |
+| before2 | 200 Hz | froze ~9 min in |
+| after2 | 50 Hz | froze 87 s after active, 457.5 s, never recovered |
+
+2 of 2 froze at 200 Hz against 1 of 2 at 50 Hz. At n=2 that is noise: **the
+rate change is not a fix.** `slam_real.lua`'s comment now says so; the value
+itself is left as committed, pending a decision.
+
+**Explanation (b) was observed directly, twice.** In before1 both buffers
+received the same transform, stamped `1790751630.346`: the independent buffer
+kept advancing and was never more than 1.0 s stale, while `controller_server`
+held that one stamp until teardown. after2 shows the same. Cartographer keeps
+publishing; `controller_server`'s own listener stops being fed. The 09-29
+claim that `tf_watch` had ruled out Cartographer was premature — that run had
+no freeze anywhere — and `MODULE.md` is corrected above to say which evidence
+actually does.
+
+**The freeze needs no goal** — before1 began 13 s before the first one was
+sent. **Every freeze observed followed a `/tf` subscriber joining or leaving
+the graph within ~1-8 s, four of four**, but most such events trigger nothing
+and after1 had them all without freezing. Recorded as a correlation pointing
+at DDS discovery or transport, and the next thing to test directly — not
+claimed as a cause.
+
+**A frozen controller does not fail safe.** before1 gave an instant false
+success; in after2 the robot rotated 135-150° for a 90° request while
+steering on a pose it could not update. The leash and cancel-all stopped
+every one.
+
+**Two method flaws recorded, for whoever repeats it:** `tf_watch` ends just
+as the late probes start, so the late window had no independent coverage; and
+the IMU reported turns of the wrong sign under this load, so `one_goal.py`'s
+IMU-based false-success flags from this session are not evidence — the
+analysis instead used `controller_server`'s own stale-TF lines, which do not
+depend on the IMU.
 
 ### Open
 
-- **The TF-rate A/B itself has not been run.** Both the harness (`d4a3ce8`)
-  and its analysis script (`287fe62`) now exist; the 09-29 open item — whether
-  `pose_publish_period_sec` 5e-3 → 2e-2 changes the freeze — is still
-  unanswered.
-- **`MODULE.md`'s "ruled out Cartographer" line needs correcting** per the
-  note above — it was true of a quiet window, not a simultaneous
-  freeze-vs-buffer observation.
-- Everything else carried from 09-29 (why `controller_server`'s buffer
-  freezes, the orphan-cleanup pattern missing `planner_server`, the camera's
-  contribution only measured stationary, CI not on the default branch, tests
-  covering logic but not running nodes) is unchanged by this commit.
+- **Whether to keep or revert the 50 Hz rate is undecided.** The A/B found no
+  difference at n=2 either way; `slam_real.lua` still runs at 50 Hz, kept or
+  reverted on other grounds.
+- **The `/tf` subscriber join/leave correlation is untested as a cause.**
+  Four of four observed freezes followed one within ~1-8 s, but most such
+  events trigger nothing. Next step: join and leave `/tf` subscribers on
+  purpose, with no goals at all, and see whether that alone triggers a freeze.
+- **`tf_ab_launch.sh`'s 450 s `tf_watch` window doesn't cover the late probe.**
+  before2's freeze fell in that uncovered window; needs at least 520 s to give
+  the late probes independent coverage too.
+- **The IMU is unreliable as ground truth under this load** (wrong-sign turns,
+  `incomplete BNO055 read`, `non-unit quaternion (norm ~2.2)` in the driver
+  log), which also feeds `scan_fusion`'s yaw correction and Cartographer, not
+  just `one_goal.py --turn`'s success check.
+- Everything else carried from 09-29 (the orphan-cleanup pattern missing
+  `planner_server`, the camera's contribution only measured stationary, CI not
+  on the default branch, tests covering logic but not running nodes) is
+  unchanged by this commit.
 
 ## 2026-09-29 — working standards from the 09-28 failures, the audit against them, CI pushed over SSH, the camera fused into the lidar scan, and a silent /imu outage the refactor left behind
 
