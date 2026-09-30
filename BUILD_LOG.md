@@ -11,7 +11,8 @@ are on branch `frontier-exploration` unless noted.
 Follows 09-29's open item: `8d1999a` staged `slam_real.lua`'s
 `pose_publish_period_sec` change (5e-3 → 2e-2) to test whether Cartographer's
 TF rate is starving `controller_server`'s listener thread, but the experiment
-had not been run. `d4a3ce8` builds the tooling to run it; no A/B result yet.
+had not been run. `d4a3ce8` builds the tooling to run it; `287fe62` adds the
+tooling to read the result; no A/B result yet.
 
 ### Built (`d4a3ce8`)
 
@@ -40,6 +41,16 @@ had not been run. `d4a3ce8` builds the tooling to run it; no A/B result yet.
   cancel service, which does not depend on the client surviving — per section
   2 of CLAUDE.md, killing the launching process does not stop a goal Nav2
   already holds.
+- **`tf_ab_analyse.py`** (`287fe62`), new: reads what `tf_ab_launch.sh` leaves
+  behind and lines up `controller_server`'s buffer against `tf_watch`'s on one
+  clock, per probe window — `controller_server` from its "Transform data too
+  old" lines' Data time and Transform time, `tf_watch` from its per-second
+  trace. Both stale at once points at Cartographer; only the controller stale
+  points at its listener; neither stale means no freeze in that window.
+  "Frozen" is defined the same way as elsewhere in this log: a held Transform
+  time against an advancing Data time, past a 3 s threshold. Checked at the
+  desk against synthetic frozen and healthy runs before use; not yet run
+  against real harness output, since the A/B itself has not been run.
 
 ### Fault found starting the harness, and what was done
 
@@ -59,9 +70,10 @@ this diff.
 
 ### Open
 
-- **The TF-rate A/B itself has not been run.** The harness now exists
-  (`d4a3ce8`); the 09-29 open item — whether `pose_publish_period_sec` 5e-3 →
-  2e-2 changes the freeze — is still unanswered.
+- **The TF-rate A/B itself has not been run.** Both the harness (`d4a3ce8`)
+  and its analysis script (`287fe62`) now exist; the 09-29 open item — whether
+  `pose_publish_period_sec` 5e-3 → 2e-2 changes the freeze — is still
+  unanswered.
 - **`MODULE.md`'s "ruled out Cartographer" line needs correcting** per the
   note above — it was true of a quiet window, not a simultaneous
   freeze-vs-buffer observation.
