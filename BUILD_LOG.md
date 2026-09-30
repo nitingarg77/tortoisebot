@@ -201,6 +201,20 @@ which would explain load-dependent, near-join/leave, single-reader freezes
 that never recover. Labelled a guess needing either a backtrace or a change of
 DDS implementation to test.
 
+### Backtrace tooling added for the next freeze (`f6b2a1d`)
+
+Follows the open item above: `/proc` can show a thread that worked and then
+went fully idle in `futex_wait`, but not whether it is blocked on a lock or
+was simply never handed another sample. gdb, now installed on the robot for
+this, can. `tf_join_probe.py` gains a `backtrace()` step, run only after
+`6cbfb71`'s thread snapshot has already confirmed a freeze — attaching stops
+the process for its duration, which is harmless once frozen but would itself
+starve a healthy listener if done speculatively before a freeze is confirmed.
+Two all-thread backtraces are taken 5 s apart (`info threads` plus
+`thread apply all bt 30`), with `debuginfod` off so gdb does not stall on
+network symbol lookups. Wired into `main()` right after the two
+`threads_frozen` snapshots. Not yet run against a real freeze.
+
 ### Open
 
 - **The `/tf` subscriber join/leave correlation is still untested as a
@@ -217,10 +231,11 @@ DDS implementation to test.
 - **Whether the stuck thread is blocked on a lock or never handed data is
   still open.** `6cbfb71`'s `/proc` snapshot shows one thread went from 3.2 s
   of CPU to none, parked in `futex_wait`, while Fast DDS receive threads
-  stayed active — consistent with either. Needs a backtrace (no debugger is
-  installed on the robot) or a test of the working hypothesis: a reliable
-  `/tf` reader failing to recover past overwritten samples, which would need a
-  change of DDS implementation to test directly.
+  stayed active — consistent with either. `f6b2a1d` (above) adds the gdb
+  backtrace that could distinguish the two, now that gdb is installed on the
+  robot, but it has not yet caught a live freeze. Alternative: test the
+  working hypothesis directly — a reliable `/tf` reader failing to recover
+  past overwritten samples — which would need a change of DDS implementation.
 - **`tf_ab_launch.sh`'s 450 s `tf_watch` window doesn't cover the late probe.**
   before2's freeze fell in that uncovered window; needs at least 520 s to give
   the late probes independent coverage too.
