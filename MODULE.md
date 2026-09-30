@@ -405,9 +405,13 @@ before the goal was sent. It overshot the 0.80 m goal and curved off heading.
 A frozen `map` -> `odom` does not stop the robot; it makes Nav2 blind to the
 fact that it is moving.
 
-**(a) is ruled out.** `scripts/tf_watch.py` holds its own tf2 buffer in a
-third process and separately counts raw `/tf` messages off the wire. Run for
-100 s with Cartographer up, on a Pi at load 11.15:
+**(a) is ruled out — but only as of 2026-09-30, by the simultaneous runs
+below.** The 09-29 run that first claimed it (reproduced next) had no freeze
+*anywhere*, so it showed Cartographer healthy in a quiet window, not innocent
+during a freeze. That claim was premature and is kept here as the reasoning
+that did not hold. `scripts/tf_watch.py` holds its own tf2 buffer in a third
+process and separately watches raw `/tf` off the wire. Run for 100 s with
+Cartographer up, on a Pi at load 11.15:
 
 | | |
 |---|---|
@@ -492,6 +496,70 @@ if the hang gets worse.
 Correlation recorded, **not** claimed as cause: the buffer's last update fell
 within about a second of the test script starting, which added a TF listener
 and two sensor-QoS subscriptions to a Pi already at load 11.6.
+
+### The TF-rate A/B: not a fix (2026-09-30, measured)
+
+Four launches, alternating 200 Hz / 50 Hz, identical protocol
+(`scripts/tf_ab_launch.sh`, analysed by `scripts/tf_ab_analyse.py`; raw logs in
+`~/logs/ab/` on the robot). Each: Nav2 up with `/scan_fused` as the single
+source, 45 s settle, 450 s of `tf_watch.py` tracing an independent buffer, four
+in-place turns — two early, two about 9 minutes after launch.
+
+| launch | rate | froze? | onset | `tf_watch` during the freeze |
+|---|---|---|---|---|
+| before1 | 200 Hz | **yes**, 437.8 s, never recovered | 52 s after active | ≤ 1.0 s stale |
+| after1 | 50 Hz | no — 0 stale lines in 7.5 min | — | — |
+| before2 | 200 Hz | **yes** | ~9 min after launch | not covered (see below) |
+| after2 | 50 Hz | **yes**, 457.5 s, never recovered | 87 s after active | ≤ 1.05 s stale |
+
+**2 of 2 froze at 200 Hz, 1 of 2 at 50 Hz. At n=2 that difference is noise, and
+the rate change does not prevent the freeze.** Actual map->odom on the wire was
+59–88 Hz when 200 was asked for and 32–34 Hz for 50: Cartographer never met
+either request on this Pi.
+
+**What the runs did establish — explanation (b), observed directly, twice.** In
+before1 both buffers received the same transform, stamped `1790751630.346`;
+`tf_watch`'s kept advancing and was never more than 1.0 s stale, while
+`controller_server`'s held that one stamp until teardown. after2 shows the same
+(independent buffer ≤ 1.05 s stale throughout a 457 s controller freeze). So
+Cartographer keeps publishing and an ordinary listener keeps receiving:
+**`controller_server`'s own listener stops being fed.** Cartographer (a) is now
+properly ruled out, for those two freezes.
+
+**The freeze does not need a goal and does not need `one_goal.py`.** In before1
+it began 13 s before the first goal was sent.
+
+**Every freeze observed so far followed a `/tf` subscriber joining or leaving
+the graph** — 09-29 (`one_goal.py` joining, ~1 s), before1 (`tf_watch`'s
+subscription coming up, ~2 s), before2 (a probe's `one_goal.py` shutting down,
+~1.3 s), after2 (a probe's `one_goal.py` starting, 2–8 s). Four of four, but not
+deterministic: each launch has about ten such events and most trigger nothing,
+and after1 had all of them and never froze. It points at DDS discovery or
+transport rather than at Nav2's code, and it is the next thing to test
+directly — join and leave `/tf` subscribers on purpose, with no goals at all.
+It is a correlation, **not** a cause. Fast DDS 2.6.12 / `rmw_fastrtps_cpp`
+6.2.10; no shared-memory transport errors in any of the four launches, with
+`/dev/shm` cleared before the drivers started.
+
+**A frozen controller does not fail safe, and not always the same way.** before1:
+turns reported "Reached the goal!" 32 ms after acceptance with no rotation —
+the documented false success. before2 and after2: turns ran on until "Failed to
+make progress" or the leash, and in after2 the robot rotated 135–150° for a 90°
+request while the controller steered against a pose it could no longer update.
+The leash and the cancel-all stopped every one.
+
+**Two flaws in the method, for whoever repeats it.**
+
+- `tf_watch` runs 450 s from settle and the late probes start just as it ends,
+  so it has no samples for the late window. before2's freeze fell there. Give
+  it at least 520 s.
+- **The IMU is not a reliable ground truth at this load.** During the runs it
+  reported turns of the wrong sign (−23.9° against TF's +68°; −61° against
+  +66.6°), with `incomplete BNO055 read` and `non-unit quaternion (norm ~2.2)`
+  in the driver log. `one_goal.py --turn` judges false success by the IMU, so
+  its `rc=2` flags this session are not evidence; the analysis used
+  `controller_server`'s own stale-TF lines, which do not depend on it. The same
+  IMU feeds `scan_fusion`'s yaw correction and Cartographer.
 
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.

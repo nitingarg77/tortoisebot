@@ -43,7 +43,11 @@ options = {
   num_point_clouds = 0,
   lookup_transform_timeout_sec = 0.2,
   submap_publish_period_sec = 0.3,
-  -- 50 Hz, down from 5e-3 (200 Hz). AN EXPERIMENT, not a verified fix.
+  -- 50 Hz, down from 5e-3 (200 Hz). MEASURED 2026-09-30: NOT A FIX for the
+  -- controller_server freeze -- 1 of 2 launches froze at 50 Hz against 2 of 2
+  -- at 200 Hz, which at n=2 is noise (MODULE.md, "The TF-rate A/B"). No harm
+  -- was seen either. Kept or reverted on other grounds; the reasoning that
+  -- motivated it follows.
   --
   -- controller_server's map->odom buffer freezes at one timestamp while
   -- map->odom stays healthy on the wire (tf_watch.py: 118 Hz, and an ordinary
