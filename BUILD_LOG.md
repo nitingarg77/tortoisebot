@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-30 — the TF-rate A/B: built, run, and found not to be a fix
+## 2026-09-30 — the TF-rate A/B: built, run, found not to be a fix, and reverted
 
 Follows 09-29's open item: `8d1999a` staged `slam_real.lua`'s
 `pose_publish_period_sec` change (5e-3 → 2e-2) to test whether Cartographer's
@@ -86,7 +86,7 @@ turns probed early and again ~9 min in.
 
 2 of 2 froze at 200 Hz against 1 of 2 at 50 Hz. At n=2 that is noise: **the
 rate change is not a fix.** `slam_real.lua`'s comment now says so; the value
-itself is left as committed, pending a decision.
+itself was left as committed, pending a decision (resolved below, `2ecda70`).
 
 **Explanation (b) was observed directly, twice.** In before1 both buffers
 received the same transform, stamped `1790751630.346`: the independent buffer
@@ -116,11 +116,20 @@ IMU-based false-success flags from this session are not evidence — the
 analysis instead used `controller_server`'s own stale-TF lines, which do not
 depend on the IMU.
 
+### The 50 Hz rate reverted to 200 Hz (`2ecda70`)
+
+The A/B above left "keep or revert" undecided on rate alone. Load settled it
+the same way: end-of-run load average was indistinguishable between rates,
+13.6-14.7 at both. With no measured benefit either way, `pose_publish_period_sec`
+is reverted to `5e-3` (200 Hz) — Cartographer's upstream default, and the rate
+every earlier observation of the freeze was made at, so the next planned test
+(joining and leaving `/tf` subscribers on purpose) starts from the same
+baseline rather than a new one. `slam_real.lua`'s comment keeps the A/B result
+rather than being deleted, so the experiment is not repeated blind; `MODULE.md`
+is updated to match.
+
 ### Open
 
-- **Whether to keep or revert the 50 Hz rate is undecided.** The A/B found no
-  difference at n=2 either way; `slam_real.lua` still runs at 50 Hz, kept or
-  reverted on other grounds.
 - **The `/tf` subscriber join/leave correlation is untested as a cause.**
   Four of four observed freezes followed one within ~1-8 s, but most such
   events trigger nothing. Next step: join and leave `/tf` subscribers on
