@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-30 — the TF-rate A/B: built, run, found not to be a fix, reverted, and the join/leave test built to run next
+## 2026-09-30 — the TF-rate A/B: built, run, found not to be a fix, reverted, and the join/leave test built, run past the lock, and its first freeze snapshotted
 
 Follows 09-29's open item: `8d1999a` staged `slam_real.lua`'s
 `pose_publish_period_sec` change (5e-3 → 2e-2) to test whether Cartographer's
@@ -170,14 +170,57 @@ up to three times, logging the set's own output instead of discarding it,
 before falling through to the same refuse-to-probe check as before. Not yet
 re-run.
 
+### join1 and join2 run: the lock held, a fifth freeze, and a thread snapshot (`6cbfb71`)
+
+The retried set-and-read-back (`401308b`, above) was run. **join1** stopped at
+the motion lock again, as designed: `max_velocity` read back unchanged, so no
+probe was sent — the cap still never reached the node on that attempt. **join2**
+froze at its first probe, before the quiet phase even began: the frozen
+`Transform time` falls inside the motion lock's own retried `ros2 param
+set`/`get` calls. That is a fifth freeze within seconds of a participant
+joining or leaving — and this one has no `/tf` subscription at all, one point
+against "`/tf` matching specifically" and toward participant discovery in
+general, still a correlation rather than a cause.
+
+**Thread snapshot of the frozen `controller_server`**, two `/proc` samples 7 s
+apart: one thread had used 3.2 s of CPU and then used none, parked in
+`futex_wait`, while the Fast DDS receive threads stayed active. Consistent
+with a stalled listener; `/proc` cannot say whether it is waiting on a lock or
+is simply never handed data — that needs a backtrace, and no debugger is
+installed on the robot.
+
+**Design flaw recorded for the next run:** the motion lock's own `ros2 param`
+CLI calls are themselves join/leave events, so the freeze can happen during
+them and the quiet phase is never reached. The caps should be set and verified
+from inside the one long-lived probe process instead of via separate CLI
+calls.
+
+**Working hypothesis, not established:** a reliable `/tf` reader that fails to
+recover past samples the writer has overwritten while the reader was behind,
+which would explain load-dependent, near-join/leave, single-reader freezes
+that never recover. Labelled a guess needing either a backtrace or a change of
+DDS implementation to test.
+
 ### Open
 
 - **The `/tf` subscriber join/leave correlation is still untested as a
-  cause.** Four of four observed freezes followed one within ~1-8 s, but most
-  such events trigger nothing. The tooling exists (`f1dc10c`, above); its
-  first run, join1, stopped at the motion lock before sending a single probe
-  because `max_velocity` had not landed, and `401308b` adds a retried
-  set-and-read-back for that reason. Still not yet run past the lock.
+  cause, and the test tooling itself needs a fix.** Five of five observed
+  freezes have now followed a participant joining or leaving within seconds,
+  including one, `6cbfb71` above, with no `/tf` subscription at all — a point
+  toward participant discovery in general rather than `/tf` matching
+  specifically, but still a correlation. `f1dc10c`'s quiet phase has not yet
+  been reached: `6cbfb71` found the motion lock's own `ros2 param` calls are
+  themselves join/leave events, so the freeze happens before the quiet phase
+  starts. Next: set and verify the velocity caps from inside the long-lived
+  probe process rather than via separate CLI calls, so the lock stops
+  generating the stimulus under test.
+- **Whether the stuck thread is blocked on a lock or never handed data is
+  still open.** `6cbfb71`'s `/proc` snapshot shows one thread went from 3.2 s
+  of CPU to none, parked in `futex_wait`, while Fast DDS receive threads
+  stayed active — consistent with either. Needs a backtrace (no debugger is
+  installed on the robot) or a test of the working hypothesis: a reliable
+  `/tf` reader failing to recover past overwritten samples, which would need a
+  change of DDS implementation to test directly.
 - **`tf_ab_launch.sh`'s 450 s `tf_watch` window doesn't cover the late probe.**
   before2's freeze fell in that uncovered window; needs at least 520 s to give
   the late probes independent coverage too.
