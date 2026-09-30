@@ -41,6 +41,12 @@ Practical rules:
   source.
 - When a hypothesis is wrong, say so plainly and record it. `MODULE.md` keeps
   the withdrawn TF-remap theory for this reason.
+- **Read the source of the version that is installed, not the branch head.**
+  `dpkg -l` gives the version; read the upstream code at that release. On
+  2026-09-29 the Humble tf2 source was searched for a lock inversion and none
+  was found, because the branch head already carried the fix; the robot ran
+  the release before it, and the deadlock took another day and a backtrace to
+  find. See `MODULE.md`, "The cause".
 
 ## 2. Anything that commands robot motion
 

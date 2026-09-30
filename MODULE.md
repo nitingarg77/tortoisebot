@@ -290,8 +290,11 @@ Changing lidar means editing this repository. Note also that
 `autobringup.launch.py` launches `camera_ros`, which is a *different* package
 from the vendored `v4l2_camera` and is not installed on the development machine.
 
-**`controller_server`'s `map` -> `odom` buffer freezes, and the cause is not
-yet known.** The 09-28 measurement below attributes it to a second observation
+**`controller_server`'s `map` -> `odom` buffer freezes: an ABBA deadlock in tf2
+0.25.23, fixed upstream but not yet in apt.** Found 2026-09-30 by backtrace;
+see "The cause" at the end of this entry. The history below is kept because
+every step of it was a reasonable reading of the evidence at the time.
+Previously headed "the cause is not yet known". The 09-28 measurement below attributes it to a second observation
 source; the 09-29 measurement further down shows the hang persisting with a
 single source, so read both before acting on either. Adding
 `floor_scan` beside `scan` in `observation_sources` (nav2_params_robot.yaml)
@@ -611,6 +614,66 @@ reader would stop permanently while fast readers carry on. That would fit
 everything seen so far: load-dependent, near join/leave events, one reader
 only, never recovers. It is a guess about Fast DDS internals and needs either
 a backtrace or a change of DDS implementation to test.
+
+**That guess was wrong.** The backtrace below replaces it.
+
+### The cause: an ABBA deadlock in tf2 0.25.23 (2026-09-30, backtrace)
+
+join3 (gdb installed on the robot for this) froze in its stimulus phase, 2.6 s
+after a plain participant joined, and was backtraced twice, 5 s apart. Against
+a genuine healthy baseline taken 6 minutes earlier, exactly two threads that
+had been busy went to zero CPU, and both were blocked **acquiring mutexes** —
+`futex_wait(expected=2)` under `pthread_mutex_lock`, not the condition-variable
+wait an idle executor shows:
+
+| thread | what it is | where it is stuck |
+|---|---|---|
+| LWP 36805 | the TF listener's dedicated thread | `subscription_callback` -> `setTransform` -> `testTransformableRequests` -> Buffer's callback -> `pthread_mutex_lock` |
+| LWP 36806 | the costmap's executor thread | obstacle layer `LaserScan` -> `Buffer::waitForTransform` -> `addTransformableRequest` -> `pthread_mutex_lock` |
+
+In the tf2 source **at the installed version** (0.25.23):
+
+- `BufferCore::testTransformableRequests` takes `transformable_requests_mutex_`
+  and still holds it when it invokes each ready request's callback. That
+  callback is `tf2_ros::Buffer`'s, and it takes `timer_to_request_map_mutex_`.
+- `tf2_ros::Buffer::waitForTransform` takes `timer_to_request_map_mutex_` and,
+  while holding it, calls `addTransformableRequest`, which takes
+  `transformable_requests_mutex_`.
+
+Opposite lock order on two threads: each holds what the other wants, forever.
+The listener thread never inserts another transform, so the buffer freezes at
+whatever it last received; nothing throws, so nothing is logged.
+
+**Fixed upstream:** geometry2 `9997e9695` on `humble`, 2026-09-10, "Fix ABBA
+deadlock between `waitForTransform` and `testTransformableRequests`"
+(backport of #982, PR #990), released as tf2 0.25.24. It changes only
+`tf2/src/buffer_core.cpp`. The robot and the box both run 0.25.23, built
+09-07/09-08; apt's candidate is still 0.25.23 as of 09-30.
+
+**How it explains everything recorded above:**
+
+- Permanent, silent, one process only: a deadlock does not recover, and only a
+  buffer with a `MessageFilter` calling `waitForTransform` can take lock B
+  first. `tf_watch.py` has none, which is why it never froze.
+- A race, so load-dependent and not every launch: the costmap thread must
+  register a request (a scan arriving before its transform) in the window
+  where the listener is running a ready callback.
+- **09-28's two-source A/B was not wrong, just not the whole story**: a second
+  observation source doubles the `waitForTransform` registrations, which
+  raises the odds of hitting the window. One source lowers the rate; it does
+  not remove the race.
+- **The join/leave correlation (5 of 5) is timing, not DDS**: a participant
+  joining causes a burst of discovery work on an already-loaded Pi, which
+  delays TF behind scans and pushes more scans down the `waitForTransform`
+  path at the moment TF inserts resume.
+- The TF-rate A/B was noise because the rate changes the odds, not the lock
+  order.
+
+**Where the reasoning went wrong, so it is not repeated.** On 09-29 the Humble
+source was read to look for exactly this kind of lock inversion — and found
+none, because the branch head already contained the fix. The code read was not
+the code running. The version check (`dpkg -l`, then the source at that
+release) took one command and would have ended this on 09-29.
 
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.

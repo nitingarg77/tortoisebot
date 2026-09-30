@@ -73,13 +73,15 @@ grep -q "Managed nodes are active" "$D/$TAG.compute.log" || { note "FAIL nav2 no
 note "nav2 active"
 
 # --- the motion lock: cap the smoother, then prove it ----------------------
+# Every ros2 CLI call is wrapped in `timeout`: join3 sat in one `ros2 param get`
+# for 294 s with no output until it was killed by hand.
 # Set and read back, retried: with the CLI daemon stopped every call rediscovers
 # the graph from scratch, and on a loaded Pi the first one can miss the node
 # (join1: max_velocity silently unchanged while min_velocity landed).
 cap() {   # $1 = parameter name
   for try in 1 2 3; do
-    out=$(ros2 param set /velocity_smoother "$1" "[0.0, 0.0, 0.0]" 2>&1 | tr -d '\n')
-    got=$(ros2 param get /velocity_smoother "$1" 2>&1 | tr -d '\n')
+    out=$(timeout 30 ros2 param set /velocity_smoother "$1" "[0.0, 0.0, 0.0]" 2>&1 | tr -d '\n')
+    got=$(timeout 30 ros2 param get /velocity_smoother "$1" 2>&1 | tr -d '\n')
     note "cap $1 try $try: set -> '$out'"
     echo "$got" | grep -q "\[0.0, 0.0, 0.0\]" && break
     sleep 3
@@ -87,8 +89,8 @@ cap() {   # $1 = parameter name
 }
 cap max_velocity
 cap min_velocity
-maxv=$(ros2 param get /velocity_smoother max_velocity 2>&1 | tr -d '\n')
-minv=$(ros2 param get /velocity_smoother min_velocity 2>&1 | tr -d '\n')
+maxv=$(timeout 30 ros2 param get /velocity_smoother max_velocity 2>&1 | tr -d '\n')
+minv=$(timeout 30 ros2 param get /velocity_smoother min_velocity 2>&1 | tr -d '\n')
 note "smoother max_velocity: $maxv"
 note "smoother min_velocity: $minv"
 nonzero() { echo "$1" | grep -oE '\-?[0-9]+\.[0-9]+' | grep -qvE '^-?0\.0+$'; }
@@ -97,7 +99,7 @@ if ! echo "$maxv" | grep -q "0.0, 0.0, 0.0" || ! echo "$minv" | grep -q "0.0, 0.
   note "FAIL velocity cap did not land; no probes sent"
   exit 5
 fi
-subs=$(ros2 topic info -v /cmd_vel_nav 2>/dev/null | awk '/^Node name:/{n=$3} /^Endpoint type: SUBSCRIPTION/{print n}' | tr '\n' ' ')
+subs=$(timeout 30 ros2 topic info -v /cmd_vel_nav 2>/dev/null | awk '/^Node name:/{n=$3} /^Endpoint type: SUBSCRIPTION/{print n}' | tr '\n' ' ')
 note "/cmd_vel_nav subscribers: $subs"
 [ "$(echo $subs)" = "velocity_smoother" ] || { note "FAIL something other than velocity_smoother reads /cmd_vel_nav"; exit 5; }
 
