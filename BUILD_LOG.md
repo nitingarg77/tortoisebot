@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-09-30 — the TF-rate A/B: built, run, found not to be a fix, and reverted
+## 2026-09-30 — the TF-rate A/B: built, run, found not to be a fix, reverted, and the join/leave test built to run next
 
 Follows 09-29's open item: `8d1999a` staged `slam_real.lua`'s
 `pose_publish_period_sec` change (5e-3 → 2e-2) to test whether Cartographer's
@@ -128,12 +128,41 @@ baseline rather than a new one. `slam_real.lua`'s comment keeps the A/B result
 rather than being deleted, so the experiment is not repeated blind; `MODULE.md`
 is updated to match.
 
+### The join/leave test built, to run next (`f1dc10c`)
+
+Follows the open item above: four of four observed freezes so far followed a
+`/tf` subscriber joining or leaving the graph within ~1-8 s, though most such
+events trigger nothing. `f1dc10c` builds the tooling to make those events on
+purpose and watch for the freeze; not yet run.
+
+- **`tf_join_launch.sh`** brings Nav2 up at the committed (200 Hz) rate, then
+  locks out motion before anything else: `velocity_smoother`'s `max_velocity`
+  and `min_velocity` set to zero and read back, and `/cmd_vel_nav` checked to
+  have `velocity_smoother` as its only reader. If either check fails, no probe
+  is sent.
+- **`tf_join_probe.py`** is one long-lived process on purpose — a fresh
+  process per probe would itself be a join/leave, the stimulus under test.
+  Every 10 s it sends `controller_server`'s own `FollowPath` action a
+  one-pose path stamped now and cancels it within 2.5 s; a frozen buffer
+  answers with "Transform data too old" and the frozen `Transform time`, the
+  only detector there is, since a frozen controller logs nothing while idle
+  (checked against the A/B logs above). `FollowPath` skips the behaviour
+  tree, so no recovery behaviour can drive the robot.
+- **Quiet phase first**, for the spontaneous rate; **then every 40 s** a
+  process joins the graph for 15 s and leaves, alternating one with a tf2
+  `TransformListener` and a plain node with no subscriptions, to separate
+  `/tf` matching from participant discovery in general.
+- **At the first freeze** it snapshots `controller_server`'s threads through
+  `/proc` — state, wait channel, syscall, CPU — to show whether the stuck
+  thread is waiting on a lock or for data.
+
 ### Open
 
 - **The `/tf` subscriber join/leave correlation is untested as a cause.**
   Four of four observed freezes followed one within ~1-8 s, but most such
-  events trigger nothing. Next step: join and leave `/tf` subscribers on
-  purpose, with no goals at all, and see whether that alone triggers a freeze.
+  events trigger nothing. The tooling to join and leave `/tf` subscribers on
+  purpose, with no goals at all, now exists (`f1dc10c`, above) but has not yet
+  been run.
 - **`tf_ab_launch.sh`'s 450 s `tf_watch` window doesn't cover the late probe.**
   before2's freeze fell in that uncovered window; needs at least 520 s to give
   the late probes independent coverage too.
