@@ -174,6 +174,31 @@ def threads_snapshot(pid, path):
     return '%d threads -> %s' % (len(rows), os.path.basename(path))
 
 
+def backtrace(pid, path):
+    """All-thread backtrace of controller_server, taken ONLY once frozen.
+
+    Attaching stops the process for the duration, which is harmless once the
+    freeze is confirmed but would itself make a healthy listener fall behind,
+    so this is never done before. debuginfod is off so gdb does not stall on
+    network symbol lookups; the ROS libraries export enough symbols for
+    function names without debug packages.
+    """
+    cmd = ['sudo', '-n', 'timeout', '180', 'gdb', '-nx', '-batch',
+           '-iex', 'set debuginfod enabled off',
+           '-iex', 'set pagination off',
+           '-p', str(pid),
+           '-ex', 'info threads',
+           '-ex', 'thread apply all bt 30']
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=200)
+        out = r.stdout + r.stderr
+    except Exception as e:
+        out = 'gdb failed: %s' % e
+    with open(path, 'w') as f:
+        f.write(out)
+    return '%d lines -> %s' % (out.count('\n'), os.path.basename(path))
+
+
 def controller_pid():
     r = subprocess.run(['pgrep', '-f', '/opt/ros/humble/lib/nav2_controller/controller_server'],
                        capture_output=True, text=True)
@@ -273,6 +298,9 @@ def main():
                         note('threads frozen: ' + threads_snapshot(pid, stem + '.threads_frozen1'))
                         time.sleep(5)
                         note('threads frozen: ' + threads_snapshot(pid, stem + '.threads_frozen2'))
+                        note('backtrace 1: ' + backtrace(pid, stem + '.bt1'))
+                        time.sleep(5)
+                        note('backtrace 2: ' + backtrace(pid, stem + '.bt2'))
                     break
             rclpy.spin_once(n, timeout_sec=0.1)
     finally:
