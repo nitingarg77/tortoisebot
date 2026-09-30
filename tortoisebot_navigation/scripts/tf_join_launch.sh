@@ -73,8 +73,20 @@ grep -q "Managed nodes are active" "$D/$TAG.compute.log" || { note "FAIL nav2 no
 note "nav2 active"
 
 # --- the motion lock: cap the smoother, then prove it ----------------------
-ros2 param set /velocity_smoother max_velocity "[0.0, 0.0, 0.0]" >/dev/null 2>&1
-ros2 param set /velocity_smoother min_velocity "[0.0, 0.0, 0.0]" >/dev/null 2>&1
+# Set and read back, retried: with the CLI daemon stopped every call rediscovers
+# the graph from scratch, and on a loaded Pi the first one can miss the node
+# (join1: max_velocity silently unchanged while min_velocity landed).
+cap() {   # $1 = parameter name
+  for try in 1 2 3; do
+    out=$(ros2 param set /velocity_smoother "$1" "[0.0, 0.0, 0.0]" 2>&1 | tr -d '\n')
+    got=$(ros2 param get /velocity_smoother "$1" 2>&1 | tr -d '\n')
+    note "cap $1 try $try: set -> '$out'"
+    echo "$got" | grep -q "\[0.0, 0.0, 0.0\]" && break
+    sleep 3
+  done
+}
+cap max_velocity
+cap min_velocity
 maxv=$(ros2 param get /velocity_smoother max_velocity 2>&1 | tr -d '\n')
 minv=$(ros2 param get /velocity_smoother min_velocity 2>&1 | tr -d '\n')
 note "smoother max_velocity: $maxv"
