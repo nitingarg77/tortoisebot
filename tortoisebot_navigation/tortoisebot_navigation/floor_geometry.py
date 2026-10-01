@@ -36,6 +36,51 @@ def range_from_row(row, image_height, vfov, pitch, height, x_offset=0.0):
     return height / math.tan(angle) - x_offset
 
 
+def row_for_range(distance, image_height, vfov, pitch, height, x_offset=0.0):
+    """The image row where the floor meets something `distance` away.
+
+    The inverse of range_from_row, for lining the lidar up against the image.
+    """
+    fy = (image_height / 2) / math.tan(vfov / 2)
+    angle = math.atan(height / (distance + x_offset)) + pitch
+    return image_height / 2 + fy * math.tan(angle)
+
+
+def tilt_scores(edge, lidar, pitches, vfov, height, x_offset, band=3):
+    """How well each candidate pitch lines the lidar up with the image's edges.
+
+    `edge` is a vertical-gradient image; `lidar` is one range per beam (left
+    to right across the image, as boundary_rows' columns are), None where the
+    lidar is no witness -- no return, or a range through glass. For each
+    pitch, every beam's lidar range is turned into the row where that
+    object's foot should be, and the score is the mean of the strongest edge
+    within `band` rows of it. A right pitch puts every beam on a real floor
+    junction at once; a wrong one puts them on blank wall or blank floor.
+
+    Expect a second, smaller-pitch peak from edges standing above the floor
+    (a plinth's top, a skirting board): they line up with the lidar too, just
+    higher. The floor junction is the peak with the larger pitch -- check it
+    by eye with fit_camera_tilt.py's overlay before trusting either.
+    """
+    h, w = edge.shape[:2]
+    beams = len(lidar)
+    step = max(w // beams, 1)
+    scores = []
+    for pitch in pitches:
+        total, used = 0.0, 0
+        for b, d in enumerate(lidar):
+            if d is None:
+                continue
+            row = int(round(row_for_range(d, h, vfov, pitch, height, x_offset)))
+            if row - band < 0 or row + band + 1 > h:
+                continue
+            total += float(edge[row - band:row + band + 1,
+                                b * step:(b + 1) * step].max(axis=0).mean())
+            used += 1
+        scores.append(total / used if used else 0.0)
+    return scores
+
+
 def horizon_row(image_height, vfov, pitch):
     """Rows at or above this see no floor, so there is nothing to look for."""
     fy = (image_height / 2) / math.tan(vfov / 2)

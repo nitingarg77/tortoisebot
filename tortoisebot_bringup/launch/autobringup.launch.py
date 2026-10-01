@@ -167,6 +167,13 @@ def generate_launch_description():
             # 'camera_node' the images are on /camera_node/image_raw, not the
             # /camera/image_raw the node defaults to.
             'image_topic': '/camera_node/image_raw',
+            # Measured 2026-10-01 with fit_camera_tilt.py: 35 lidar beams on
+            # floor junctions at 1.7-2.7 m put the peak at 10.0-10.25 deg up.
+            # The 5.0 it replaces came from one junction on 09-28 and made
+            # every camera range about half the real one. At 10.1 the camera
+            # sees no floor closer than 0.67 m. Re-measure after touching the
+            # camera bracket.
+            'camera_pitch_up_deg': 10.1,
         }],
         condition=IfCondition(PythonExpression([
             "'true' if ('", use_sim_time, "' == 'false' or '", use_sim_time,

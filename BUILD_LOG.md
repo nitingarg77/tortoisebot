@@ -6,6 +6,107 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
+## 2026-10-01 (later) — the camera's "0.68 m band" was a camera tilted 10° up, not 5°: every camera range came out about half the real one; tilt re-measured against 35 lidar beams, and 0.5 m goals now run (3 of 3)
+
+### What the band was
+
+Listen-only, robot stationary, at a new position (not one of the three from
+the morning). Over 120 s, all 3,342 beams of `/scan_fused` in 0.60–0.80 m
+between −20° and +5° came from the camera, in all 598 `/floor_scan` messages;
+the lidar had no return there or saw through to 4.5 m. A camera frame showed a
+glass partition on that side, which the lidar sees through, so the first
+reading was "the camera is right and this is its job". That was half true.
+
+Compared bearing by bearing with the lidar wherever both see something
+opaque, the camera was short **everywhere**, not just in the band: the wooden
+panel at +21° to +27°, lidar 2.1–2.7 m, camera 0.78–0.85 m; the open doorway
+straight ahead, lidar 4.7 m, camera 0.89 m. All 57 camera beams were nearer
+than the lidar and none agreed.
+
+**Ruled out:** a cropped sensor mode at 640×480 narrowing the field of view
+(libcamera reports `Selected sensor format: 640x480-SGBRG10`, the full-sensor
+binned mode, and the 09-28 calibration was also at 480 rows); a rotated lidar
+frame (`lidar_joint` rpy is 0 0 0).
+
+**Cause: the camera tilt.** `floor_scan` turns the image row where the floor
+ends into a distance using the camera's tilt, configured at 5.0° up. Solving
+for the tilt that puts three floor junctions at their lidar ranges gave
+9.3–10.2°. A fit over all 35 beams with a lidar witness under 4 m (each lidar
+range turned into the row where that object meets the floor, scored by the
+image's vertical gradient there; glass and doorway skipped) peaks at
+**10.0–10.25°**; 5.0° scores at the noise floor. A second peak at 6.6° is the
+top edge of a panel's plinth, an edge standing above the floor, which lines
+up with the lidar at a smaller tilt; overlaid on the frame, only the 10.1°
+line sits on the floor junctions. Reproduced by the installed tool, run
+separately: peaks at 10.25° and 9.25° (top and bottom of the dark strip at the
+panels' feet) and 6.75° (plinth top).
+
+Both 4.3° and 5.0° came from one junction at 1.19 m on 09-28 (`6703944`,
+`0f6504a`). Whether the bracket has moved since or that junction was misread
+is not known; one junction cannot tell a floor line from an edge higher up.
+
+What it did: an object at 1.27 m was reported at 0.68 m. Nav2's costmaps take
+`/scan_fused`, so the robot saw phantom obstacles at about half their real
+distance, and `one_goal.py`'s clearance check refused anything over 0.30 m.
+
+### Changed
+
+- `camera_pitch_up_deg: 10.1` in `autobringup.launch.py`, with the
+  measurement beside it; `floor_scan.py`'s default follows.
+- **The camera is now blind closer than 0.67 m**, not the 0.45 m the
+  docstring and tests said. That was always the case at this tilt; the old
+  figure came from the wrong tilt.
+- `fit_camera_tilt.py`: the fit as a tool. Listen-only; prints the score per
+  tilt and the peaks, and `--out` writes the overlay to check by eye. The
+  logic is `floor_geometry.tilt_scores` and `row_for_range`, tested at a desk:
+  recovers a drawn tilt, skips beams with no witness, and a raised edge makes
+  the smaller-tilt peak. The old single-junction test is replaced by nine
+  junction/lidar pairs from today's frame, which pin both the new tilt
+  (camera 0–20% short) and the old one (under 40% of the lidar).
+
+### Measured, at 10.1°
+
+- Live `floor_scan` restarted at 10.1°: 0 of 293 messages with anything in
+  0.60–0.80 m; where both see something solid, camera 1.4–2.2 m against lidar
+  1.7–2.7 m. Still 0–20% short on the wooden panel, up to 30% where the lidar
+  may reach a frame behind glass. Short is the safe direction.
+- **The camera's far readings are rough even at the right tilt.** One degree
+  is ±15% at 1 m and up to a factor of two at 2.5 m, and the two junction
+  peaks are a degree apart. The near ranges, which are what the camera is for,
+  are sound.
+- A false floor edge straight ahead (a seam in the floor) moved from 0.89 m to
+  2.4 m. Still false, no longer in the way.
+
+**Navigation, 0.5 m forward goals, tf2 overlay, camera on:**
+
+| Run | Clearance before, fused / lidar | Status | Travelled (map) | Lidar progress | Left to goal (map) | Verdict |
+|---|---|---|---|---|---|---|
+| nav6 | 1.88 / 2.60 m | SUCCEEDED, 2.3 s | 0.303 m | 0.31 m | 0.197 m | ok |
+| nav7 | 1.73 / 2.29 m | SUCCEEDED, 2.3 s | 0.359 m | 0.39 m | 0.142 m | ok |
+| nav8 | 1.45 / 1.92 m | SUCCEEDED, 2.3 s | 0.361 m | 0.37 m | 0.140 m | ok |
+
+0 "Transform data too old" lines. Map pose and lidar agree within 0.03 m on
+each run, so these are real drives, not TF-freeze false successes.
+
+### Open
+
+- **Every goal stops 0.14–0.20 m short** (mean 0.34 m of 0.50): the goal
+  checker's 0.15 m tolerance, measured in `odom`, plus whatever the robot
+  coasts. nav6 ended 0.197 m short by map pose, outside 0.15, and still
+  reported success. Not investigated.
+- Re-measure the tilt with `fit_camera_tilt.py` after anyone touches the camera
+  bracket, and at a second position, to tell a moved bracket from a misread
+  junction.
+- The 0.67 m near blind zone: the fluted panels the camera exists for are
+  invisible to it inside that. `/scan_fused` is a clearing source
+  (`clearing: True`), so whether a panel marked from further out survives the
+  approach depends on how a no-return lidar beam is encoded and whether the
+  obstacle layer raytraces it (`inf_is_valid`). Not checked. Aiming the
+  bracket down shrinks the zone (`test_pitching_the_camera_down_shrinks_the_
+  blind_zone`).
+
+---
+
 ## 2026-10-01 — tf2 0.25.24 overlaid on the robot: 0 freezes in 4 join/leave runs (6 of 7 before), and RViz on the box unfrozen; first navigation goals on it, and two one_goal.py bugs
 
 Follows 09-30's root cause: an ABBA deadlock in tf2 0.25.23, fixed upstream
@@ -91,7 +192,9 @@ Cartographer and Nav2 were restarted after the robot was moved by hand.
   0.68–0.69 m return 6–13° right of ahead, which the lidar does not see. It
   showed up at three robot positions at the same range, so it is probably a
   false return fixed to the robot, not an object. Unconfirmed; it blocks every
-  goal over 0.30 m.
+  goal over 0.30 m. *Later the same day: wrong. The returns were real objects
+  at about twice that range, halved by a wrong camera tilt; see the entry
+  above.*
 - Remove both overlays when apt ships tf2 0.25.24.
 - After the reboot, `imu_node` rejects bursts of implausible samples
   (|accel| 318 m/s², non-unit quaternions): the known IMU issue, still open.
