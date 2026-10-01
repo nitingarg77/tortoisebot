@@ -292,7 +292,10 @@ from the vendored `v4l2_camera` and is not installed on the development machine.
 
 **`controller_server`'s `map` -> `odom` buffer freezes: an ABBA deadlock in tf2
 0.25.23, fixed upstream but not yet in apt.** Found 2026-09-30 by backtrace;
-see "The cause" at the end of this entry. The history below is kept because
+see "The cause" at the end of this entry. **Worked around on the robot** with
+`tf2_overlay.sh` (tf2 0.25.24 built into `~/tb_ws`): 0 freezes in 4 runs
+against 6 of 7 launches before; see "The fix, measured". Remove the overlay
+when apt ships 0.25.24 (`./tf2_overlay.sh status` says when). The history below is kept because
 every step of it was a reasonable reading of the evidence at the time.
 Previously headed "the cause is not yet known". The 09-28 measurement below attributes it to a second observation
 source; the 09-29 measurement further down shows the hang persisting with a
@@ -674,6 +677,49 @@ source was read to look for exactly this kind of lock inversion — and found
 none, because the branch head already contained the fix. The code read was not
 the code running. The version check (`dpkg -l`, then the source at that
 release) took one command and would have ended this on 09-29.
+
+### The fix, measured (2026-09-30 – 10-01)
+
+`tf2_overlay.sh install` copies only the `tf2` package at the 0.25.24 tag into
+`~/tb_ws/src/tf2` and builds it (23 s on the Pi). Everything started from
+`~/tb_ws/install/setup.bash` then loads it ahead of `/opt/ros`. Nav2 itself is
+not rebuilt, which is safe because 0.25.23 -> 0.25.24 changes
+`buffer_core.cpp` and version metadata, no header. `tf_join_probe.py` now
+logs which `libtf2.so` `controller_server` has mapped, and every run below
+shows the overlay.
+
+Same harness as join2/join3 (`tf_join_launch.sh`: motion capped to zero and
+read back, 240 s quiet then 480 s of a participant joining and leaving every
+40 s, a FollowPath probe every 10 s):
+
+| run | probes | stale probes | frozen | load (end) | notes |
+|---|---|---|---|---|---|
+| fix1 | 0 | – | – | – | motion-cap read-back timed out, so no probes; the harness now retries a failed read |
+| fix2 | 72 | 0 | no | 11.6 | |
+| fix3 | 72 | 0 | no | 10.2 | after a reboot |
+| fix4 | 72 | 3 | no | 26.7 | RViz on the dev box (tf2 0.25.23) attached over Wi-Fi throughout |
+| rviz1 | 72 | 0 | no | 14.9 | RViz on the dev box, now on the 0.25.24 overlay |
+
+Before the overlay: 6 of 7 launches froze, join2 before its first probe and
+join3 at 6.4 min. After: 0 of 4, each 12 min with 12 stimuli. fix4's three
+stale probes are lag, not a freeze: three different Transform times, 1–3 s
+old, each followed by healthy probes, at more than twice the usual load.
+
+Four clean runs is good evidence, not proof: at the old rate (6/7) the chance
+of four clean runs by luck is under 0.1%, but the rate was never measured
+under exactly these conditions. Navigation with goals has not yet been run on
+the overlay.
+
+**The dev box has the same bug.** Its tf2 is also 0.25.23. During fix4, RViz
+on the box stopped redrawing about 70 s after it opened: its GUI thread used no
+CPU for 5 s while blocked on a lock (`futex_wait_queue`, where an idle Qt GUI
+thread waits in `do_poll`), and it ignored SIGTERM. That fits the same deadlock
+in RViz's own TF buffer, but it was not backtraced, because the box needs a
+sudo password for gdb. The overlay is now built in the box's `tb_ws` too, and
+in rviz1 RViz started from that workspace (its memory map shows the overlay
+`libtf2.so`) stayed live for the whole 15 minutes. Its GUI thread was sampled
+every 30 s, and used CPU and waited in `do_poll` every time. One run each way:
+consistent with the same deadlock, not a measurement of its rate.
 
 **34 files hardcode the name `tortoisebot`** in frames, topics, package names
 and model names.

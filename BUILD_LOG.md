@@ -6,6 +6,59 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
+## 2026-10-01 — tf2 0.25.24 overlaid on the robot: 0 freezes in 4 join/leave runs (6 of 7 before), and RViz on the box unfrozen
+
+Follows 09-30's root cause: an ABBA deadlock in tf2 0.25.23, fixed upstream
+in 0.25.24 but not yet in apt.
+
+### Built
+
+- **`tf2_overlay.sh`** (`install` / `status` / `remove`) copies only the `tf2`
+  package at the 0.25.24 tag into `WS/src/tf2` and builds it with
+  `--allow-overriding tf2`. It refuses a tag whose version or changelog does
+  not match. ABI-safe: 0.25.23 -> 0.25.24 changes `buffer_core.cpp` and version
+  metadata only. Built on the robot (23 s) and on the box (4 s). `status`
+  reports apt's version and which `libtf2.so` a running `controller_server`
+  has mapped.
+- **`tf_join_probe.py`** logs `libtf2 mapped:` from `/proc/<pid>/maps` at the
+  start of every run, so each result is tied to the library it ran on.
+- **`tf_join_launch.sh`** retries the final speed-cap read-back. fix1 sent no
+  probes because `ros2 param get` timed out after `cap` had already read zero.
+  A failed read proves nothing either way, and the zeros test is unchanged.
+
+### Measured
+
+`ldd` and every run's memory map show `controller_server` on
+`~/tb_ws/install/tf2/lib/libtf2.so`.
+
+| run | probes | stale | frozen | end load |
+|---|---|---|---|---|
+| fix2 | 72 | 0 | no | 11.6 |
+| fix3 (after a reboot) | 72 | 0 | no | 10.2 |
+| fix4 (RViz attached from the box, box on 0.25.23) | 72 | 3 (lag: 3 different Transform times, 1–3 s) | no | 26.7 |
+| rviz1 (RViz attached, box on the 0.25.24 overlay) | 72 | 0 | no | 14.9 |
+
+Each run was 723–724 s with 12 join/leave stimuli. Before the fix, 6 of 7
+launches froze, join3 at 6.4 min and join2 before its first probe.
+
+**RViz on the box froze during fix4.** About 70 s after opening, its GUI thread
+blocked on a lock with no CPU, and it needed SIGKILL. The box runs tf2 0.25.23
+too, so this is likely the same deadlock in RViz's own buffer. Not
+backtraced, because gdb on the box needs a sudo password. **With the box
+overlay (rviz1), RViz stayed live for all 15 min:** the overlay `libtf2.so` was
+in its memory map, and its GUI thread was busy (≈ 410–440 ticks per 30 s) and
+waiting in `do_poll` at every 30 s sample. One run each way.
+
+### Open
+
+- Navigation with real goals on the overlay; so far only FollowPath probes
+  with motion capped.
+- Remove both overlays when apt ships tf2 0.25.24.
+- After the reboot, `imu_node` rejects bursts of implausible samples
+  (|accel| 318 m/s², non-unit quaternions): the known IMU issue, still open.
+
+---
+
 ## 2026-09-30 — the TF-rate A/B: built, run, found not to be a fix, reverted, the join/leave test built, run past the lock, its first freeze snapshotted, and the freeze backtraced to an ABBA deadlock in tf2 0.25.23
 
 Follows 09-29's open item: `8d1999a` staged `slam_real.lua`'s

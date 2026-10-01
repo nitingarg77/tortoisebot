@@ -89,8 +89,19 @@ cap() {   # $1 = parameter name
 }
 cap max_velocity
 cap min_velocity
-maxv=$(timeout 30 ros2 param get /velocity_smoother max_velocity 2>&1 | tr -d '\n')
-minv=$(timeout 30 ros2 param get /velocity_smoother min_velocity 2>&1 | tr -d '\n')
+# The final check retries a failed READ (fix1: "Wait for service timed out"
+# after cap had already read zero back). A read that returned no value proves
+# nothing either way; the zeros test below is unchanged.
+readback() {   # $1 = parameter name
+  for try in 1 2 3; do
+    got=$(timeout 30 ros2 param get /velocity_smoother "$1" 2>&1 | tr -d '\n')
+    echo "$got" | grep -q "values are" && break
+    sleep 3
+  done
+  echo "$got"
+}
+maxv=$(readback max_velocity)
+minv=$(readback min_velocity)
 note "smoother max_velocity: $maxv"
 note "smoother min_velocity: $minv"
 nonzero() { echo "$1" | grep -oE '\-?[0-9]+\.[0-9]+' | grep -qvE '^-?0\.0+$'; }

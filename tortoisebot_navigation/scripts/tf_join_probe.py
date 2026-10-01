@@ -199,6 +199,20 @@ def backtrace(pid, path):
     return '%d lines -> %s' % (out.count('\n'), os.path.basename(path))
 
 
+def libtf2_mapped(pid):
+    """Which libtf2.so the process actually loaded: apt's or the overlay.
+
+    tf2_overlay.sh puts a fixed tf2 ahead of /opt/ros on the library path. The
+    memory map is the only proof a given run used it.
+    """
+    try:
+        with open('/proc/%d/maps' % pid) as f:
+            libs = {ln.split()[-1] for ln in f if 'libtf2.so' in ln}
+        return ' '.join(sorted(libs)) or 'none'
+    except OSError as e:
+        return 'unreadable: %s' % e
+
+
 def controller_pid():
     r = subprocess.run(['pgrep', '-f', '/opt/ros/humble/lib/nav2_controller/controller_server'],
                        capture_output=True, text=True)
@@ -236,6 +250,7 @@ def main():
     stem = os.path.splitext(a.out)[0]
     note('start controller_pid=%s quiet=%.0f stim=%.0f' % (pid, a.quiet, a.stim))
     if pid:
+        note('libtf2 mapped: ' + libtf2_mapped(pid))
         note('threads healthy: ' + threads_snapshot(pid, stem + '.threads_healthy'))
 
     seen = []                              # (data_time, transform_time)
