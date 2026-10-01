@@ -49,7 +49,7 @@ What it did: an object at 1.27 m was reported at 0.68 m. Nav2's costmaps take
 `/scan_fused`, so the robot saw phantom obstacles at about half their real
 distance, and `one_goal.py`'s clearance check refused anything over 0.30 m.
 
-### Changed
+### Changed (`690c45c`)
 
 - `camera_pitch_up_deg: 10.1` in `autobringup.launch.py`, with the
   measurement beside it; `floor_scan.py`'s default follows.
