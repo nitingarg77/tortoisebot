@@ -15,7 +15,8 @@ from tortoisebot_navigation.floor_geometry import (
 
 # As mounted on this robot (CLAUDE.md section 7): measured, not nominal.
 HEIGHT = 0.134
-PITCH = math.radians(10.1)     # tilted up, which is why it is blind close in
+PITCH = math.radians(-4.5)     # tilted down since the 2026-10-01 re-aim
+OLD_MOUNT = math.radians(10.1)  # tilted up, as measured before the re-aim
 VFOV = math.radians(41.4)
 X_OFFSET = 0.05
 IMAGE_H = 480
@@ -59,20 +60,24 @@ class TestRangeFromRow:
         assert near < far
 
     def test_the_blind_zone_this_mounting_creates(self):
-        # Tilted 10.1 degrees up, the bottom of the frame lands about 0.67 m
-        # out, so the camera cannot see a door frame it is about to touch.
-        # If the bracket is re-aimed this moves.
+        # Tilted 4.5 degrees down, the bottom of the frame lands about 0.24 m
+        # from base_link, ~0.13 m ahead of the front. At the 10.1 degrees up
+        # it was mounted at before 2026-10-01 it was 0.67 m, and the robot
+        # drove into cables under a desk. If the bracket is re-aimed this moves.
         closest = range_from_row(IMAGE_H, IMAGE_H, VFOV, PITCH, HEIGHT, X_OFFSET)
-        assert 0.62 < closest < 0.72
+        assert 0.20 < closest < 0.27
+        old = range_from_row(IMAGE_H, IMAGE_H, VFOV, OLD_MOUNT, HEIGHT, X_OFFSET)
+        assert 0.62 < old < 0.72
 
     def test_x_offset_shifts_the_measurement_to_base_link(self):
         with_offset = range_from_row(470, IMAGE_H, VFOV, PITCH, HEIGHT, 0.05)
         without = range_from_row(470, IMAGE_H, VFOV, PITCH, HEIGHT, 0.0)
         assert without - with_offset == pytest.approx(0.05)
 
-    # Measured 2026-10-01: floor_scan's junction rows (of 480) on an opaque
-    # wooden panel, with the lidar's range at the same bearing, moved to
-    # base_link. The panel is the left edge of the view, +19.5 to +26.8 deg.
+    # Measured 2026-10-01 on the old mount (OLD_MOUNT, before the re-aim):
+    # floor_scan's junction rows (of 480) on an opaque wooden panel, with the
+    # lidar's range at the same bearing, moved to base_link. The panel is the
+    # left edge of the view, +19.5 to +26.8 deg.
     PANEL = [(402, 2.15), (400, 2.23), (398, 2.36), (396, 2.36), (394, 2.51),
              (394, 2.63), (392, 2.63), (392, 2.65), (390, 2.65)]
 
@@ -80,7 +85,8 @@ class TestRangeFromRow:
         # At the measured tilt the camera reads the panel 0-20% short: a few
         # rows low, on the dark line where the panel meets the glossy floor.
         for row, lidar in self.PANEL:
-            cam = range_from_row(row, IMAGE_H, VFOV, PITCH, HEIGHT, X_OFFSET)
+            cam = range_from_row(row, IMAGE_H, VFOV, OLD_MOUNT, HEIGHT,
+                                 X_OFFSET)
             assert 0.80 * lidar < cam <= lidar, (row, lidar, cam)
 
     def test_the_old_tilt_halved_every_range(self):
@@ -92,10 +98,9 @@ class TestRangeFromRow:
             assert cam < 0.40 * lidar, (row, lidar, cam)
 
     def test_pitching_the_camera_down_shrinks_the_blind_zone(self):
-        # The proposed bracket change: aim it down instead of up.
-        up = range_from_row(IMAGE_H, IMAGE_H, VFOV, PITCH, HEIGHT, X_OFFSET)
-        down = range_from_row(IMAGE_H, IMAGE_H, VFOV, math.radians(-5.0),
-                              HEIGHT, X_OFFSET)
+        # The bracket change made on 2026-10-01: aimed down instead of up.
+        up = range_from_row(IMAGE_H, IMAGE_H, VFOV, OLD_MOUNT, HEIGHT, X_OFFSET)
+        down = range_from_row(IMAGE_H, IMAGE_H, VFOV, PITCH, HEIGHT, X_OFFSET)
         assert down < up
 
 
@@ -169,7 +174,10 @@ class TestTiltScores:
 class TestHorizonRow:
 
     def test_tilted_up_puts_the_horizon_below_centre(self):
-        assert horizon_row(IMAGE_H, VFOV, PITCH) > IMAGE_H / 2
+        assert horizon_row(IMAGE_H, VFOV, OLD_MOUNT) > IMAGE_H / 2
+
+    def test_tilted_down_puts_it_above_centre(self):
+        assert horizon_row(IMAGE_H, VFOV, PITCH) < IMAGE_H / 2
 
     def test_level_puts_it_at_centre(self):
         assert horizon_row(IMAGE_H, VFOV, 0.0) == IMAGE_H // 2

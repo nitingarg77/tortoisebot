@@ -6,6 +6,83 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
+## 2026-10-01 (evening) — first auto-mapping run on the overlay (10 min, 25.5 m, clean map); the drive home ended in cables under a desk; camera re-aimed 4.5° down and its edge threshold raised to 80
+
+### Auto-mapping
+
+Frontier exploration started through `/control_exploration` from (1.15,
+−0.03), under a supervisor that logged every 10 s and, on every exit, stopped
+the explorer, cancelled every NavigateToPose goal and published zero
+`/cmd_vel`. Ran to its 10-minute limit: 25.5 m travelled, 21 frontier goals
+sent, none aborted, 0 "Transform data too old" lines, no watchdog trip, fastest
+stretch ~0.13 m/s (under the 0.15 cap, so a drive, not a runaway pose). One
+stall at (2.2, −1.2), cleared by Nav2's own spin/backup. The map (≈12 × 5 m,
+`~/logs/explore/run1/map.pgm` on the robot) has straight continuous walls and
+closed rooms; one bay left unexplored. Load average 11–16, Cartographer
+~1.5 cores; the supervisor's TF listener cost ~0.3 core.
+
+### The drive home, and why it stopped
+
+A single NavigateToPose back to the start, from (−6.95, −1.51), 8.2 m
+straight. Nav2 drove 2.4 m, then "Failed to make progress" twice; spin, backup
+and wait did not free it; ABORTED after 205 s, 6.1 m from the target. The
+camera showed the robot under a desk among network and power cables beside a
+PC case: nothing at lidar height. The user lifted it out. No further goals
+were sent into it.
+
+**The cause, as far as measured:** the camera, mounted 10.1° up, saw no floor
+closer than 0.67 m, so anything below the lidar's 0.167 m plane was invisible
+to both sensors once the robot was that close. Glass is the other gap: the
+lidar sees through it and the camera only sees a frame or base strip if there
+is one. (Carrying the robot also lost Cartographer: afterwards it put the
+robot at (0.30, −2.71) where the camera showed the start view, ~2.8 m off.)
+
+### Camera re-aimed down
+
+The user re-aimed the bracket in two steps, each measured with
+`fit_camera_tilt.py` (its search range widened from −5…20° to ±20° for
+this): 2.75° up, then 0.25° up, then **4.5° down** (41 lidar beams; the
+−4.5° peak sits on the floor junctions, the −7.5/−8° peaks are plinth
+tops, as before). The camera now sees floor from **0.24 m** of base_link,
+about 13 cm ahead of the front, instead of 0.67 m, and 3 m is still in view.
+Live at −4.5°, camera against lidar on opaque surfaces: 2.08–2.71 m against
+2.18–3.09 m.
+
+### And the threshold that came with it
+
+Aimed down, the camera sees the floor close and magnified. At the old edge
+threshold of 45 (swept on marble, further out) wood grain in the darker
+image corners read as obstacles at 0.24–0.34 m — inside the inflation
+radius, which would have pinned the robot. Swept on 30 frames of clear floor
+and 30 with a black cable 0.37 m ahead:
+
+| Threshold | Corner false hits, clear / cable (of 300 each) | Cable seen (of 810 beam-frames) | Floor junctions kept, per frame |
+|---|---|---|---|
+| 45 | 145 on beams 0, 54–59 / — | 809 | 28.8 |
+| 60 | 30 / 52 | 810 | 24.4 / 25.2 |
+| 70 | 1 / 26 | — | 22.2 |
+| 75 | 0 / 7 | 810 | 21.9 / 21.3 |
+| **80** | **0 / 0** | 810 | 21.0 / 21.1 |
+| 90 | 0 / 0 | 810 | 18.9 / 19.3 |
+
+80 set in `autobringup.launch.py`. Live at −4.5° and 80 (both read back with
+`ros2 param get`): the cable at 0.36–0.41 m from +15° to −9° where the lidar
+saw straight past it to 3–5 m, and the corners at 1.72–1.80 m against the
+lidar's 2.3 m (were 0.24–0.31 m).
+
+### Open
+
+- **The threshold margin is thin** (75 still left 7 false hits) and comes from
+  one spot, one floor, one lighting. A black cable on a light floor is the easy
+  case; a grey cable is untested. Re-sweep on another floor.
+- Frameless glass is still invisible to both sensors.
+- Exploration here wants someone watching until a run in a room with cables
+  and glass ends without contact.
+- Map coordinates from before the carry are void: Cartographer restarted for
+  a fresh map.
+
+---
+
 ## 2026-10-01 (later) — the camera's "0.68 m band" was a camera tilted 10° up, not 5°: every camera range came out about half the real one; tilt re-measured against 35 lidar beams, and 0.5 m goals now run (3 of 3)
 
 ### What the band was

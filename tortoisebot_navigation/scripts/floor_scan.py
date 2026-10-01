@@ -13,8 +13,9 @@ optical axis looks down at `atan(dv / fy) - pitch`, and the floor is
 
 The result is published as a LaserScan so Nav2 can use it as a second
 obstacle source next to the real lidar. It only ever adds obstacles; it is
-not a replacement for the lidar, and it is blind closer than about 0.67 m
-with the camera tilted up as it currently is (10.1 deg).
+not a replacement for the lidar, and it is blind closer than about 0.24 m
+from base_link with the camera tilted 4.5 deg down as it currently is
+(0.67 m at the 10.1 deg up it was mounted at before 2026-10-01).
 
 Calibrating pitch: run fit_camera_tilt.py facing opaque things 1-3 m away,
 and check its overlay. The single-junction formula
@@ -61,7 +62,7 @@ class FloorScan(Node):
         p = self.declare_parameter
         self.height = p('camera_height', 0.134).value          # m above floor
         # The launch file sets the measured value; see the note there.
-        self.pitch = math.radians(p('camera_pitch_up_deg', 10.1).value)
+        self.pitch = math.radians(p('camera_pitch_up_deg', -4.5).value)
         self.vfov = math.radians(p('camera_vfov_deg', 41.4).value)
         self.hfov = math.radians(p('camera_hfov_deg', 53.5).value)
         self.x_offset = p('camera_x_offset', 0.05).value       # ahead of base_link

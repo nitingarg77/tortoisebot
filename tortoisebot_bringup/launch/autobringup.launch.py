@@ -167,13 +167,24 @@ def generate_launch_description():
             # 'camera_node' the images are on /camera_node/image_raw, not the
             # /camera/image_raw the node defaults to.
             'image_topic': '/camera_node/image_raw',
-            # Measured 2026-10-01 with fit_camera_tilt.py: 35 lidar beams on
-            # floor junctions at 1.7-2.7 m put the peak at 10.0-10.25 deg up.
-            # The 5.0 it replaces came from one junction on 09-28 and made
-            # every camera range about half the real one. At 10.1 the camera
-            # sees no floor closer than 0.67 m. Re-measure after touching the
-            # camera bracket.
-            'camera_pitch_up_deg': 10.1,
+            # Measured 2026-10-01 with fit_camera_tilt.py, after re-aiming the
+            # bracket down: 41 lidar beams put the floor-junction peak at
+            # -4.5 deg (4.5 deg DOWN); the camera now sees floor from 0.24 m,
+            # about 13 cm ahead of the front. Before the re-aim it measured
+            # 10.1 deg up and was blind inside 0.67 m (the robot drove into
+            # cables under a desk); the 5.0 before that came from one junction
+            # on 09-28 and halved every camera range. Re-measure after
+            # touching the camera bracket.
+            'camera_pitch_up_deg': -4.5,
+            # Aimed down, the camera sees the floor close up and magnified, and
+            # at 45 (tuned on marble, further out) wood grain in the darker
+            # image corners read as obstacles 0.24-0.34 m away -- inside the
+            # inflation radius. Swept 2026-10-01 on the wood floor, 30 frames
+            # clear + 30 with a black cable 0.37 m ahead: 80 is the lowest
+            # value with 0 of 600 corner false hits (75: 7) and still sees the
+            # cable in 810 of 810 beam-frames. Thin margin, one floor, one
+            # lighting: re-sweep on a new floor.
+            'edge_threshold': 80.0,
         }],
         condition=IfCondition(PythonExpression([
             "'true' if ('", use_sim_time, "' == 'false' or '", use_sim_time,

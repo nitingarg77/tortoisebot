@@ -120,7 +120,7 @@ def main():
 
     gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (5, 5), 0)
     edge = np.abs(cv2.Sobel(normalise(gray), cv2.CV_32F, 0, 1, ksize=3))
-    pitches_deg = [p / 4 for p in range(-20, 81)]          # -5 to 20 deg
+    pitches_deg = [p / 4 for p in range(-80, 81)]          # -20 to 20 deg
     scores = tilt_scores(edge, lidar, [math.radians(p) for p in pitches_deg],
                          vfov, args.height, args.x_offset)
     top = max(scores)
