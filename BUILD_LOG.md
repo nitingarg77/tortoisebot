@@ -54,7 +54,7 @@ waiting in `do_poll` at every 30 s sample. One run each way.
 - A full-length goal on the overlay. The goals below covered at most 0.34 m,
   because the camera band kept refusing anything longer.
 
-### Navigation goals on the overlay, and two `one_goal.py` bugs
+### Navigation goals on the overlay, and two `one_goal.py` bugs (`09f49e3`)
 
 Cartographer and Nav2 were restarted after the robot was moved by hand.
 `controller_server` mapped the overlay `libtf2.so`, and every run logged
