@@ -89,6 +89,34 @@ and the blind-zone and horizon-row cases are asserted for both mounts
 - Map coordinates from before the carry are void: Cartographer restarted for
   a fresh map.
 
+### Second auto-mapping run, on the re-aimed camera: stopped by hand at 5.4 min
+
+Fresh map, camera at −4.5° / threshold 80. 5.6 m in 322 s, 10 frontier goals,
+7 "Failed to make progress" (run 1: none), 0 stale-TF lines. Stopped when the
+camera showed the robot nose to a soft bag about 0.3 m ahead, a leather bag
+beside it and a wall behind: 88 lidar returns under 0.5 m from −81° to +105°.
+No contact seen. Earlier, turning, a frame was blown out by auto exposure:
+while that lasts the camera finds no edges and adds nothing to the lidar.
+Map saved by hand afterwards, `~/logs/explore/run2/map.pgm` on the robot.
+
+**The supervisor's stop did not stop the robot.** Stopped with SIGINT, its
+`finally` failed on every step — explorer stop, cancel-all and zero
+`/cmd_vel` all raised "context is invalid" — because `rclpy.init()` installs
+its own SIGINT handler, which shuts the context down before the script's
+handler and `finally` run. The explorer kept driving for about a minute
+until `frontier_explorer`, `bt_navigator`, `controller_server`,
+`behavior_server` and `velocity_smoother` were killed and zeros published;
+the pose then held within 2 cm. The CLI stop issued first
+(`/control_exploration` stop, cancel-all) had not answered within 15 s.
+Run 1 ended on its time limit, a path that never meets the handler, which is
+why it looked fine. The supervisor and the go-to-pose script are scratch
+tools, not in this repo; neither is to be used again until it calls
+`rclpy.init(signal_handler_options=SignalHandlerOptions.NO)` and a SIGINT
+stop has been tested with the robot moving. Any tool here that stops the
+robot in a `finally` and is ended by Ctrl-C has the same exposure. In this
+repo that includes `one_goal.py`, which commands motion: by reading, not
+tested, and not yet fixed.
+
 ---
 
 ## 2026-10-01 (later) — the camera's "0.68 m band" was a camera tilted 10° up, not 5°: every camera range came out about half the real one; tilt re-measured against 35 lidar beams, and 0.5 m goals now run (3 of 3)
