@@ -37,11 +37,12 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
+from action_msgs.srv import CancelGoal
 import argparse
 
 from sensor_msgs.msg import Imu, LaserScan
 from tf2_ros import Buffer, TransformListener
-from tortoisebot_navigation.places import yaw_from_quaternion
+from tortoisebot_navigation.places import drive_verdict, yaw_from_quaternion
 from tortoisebot_navigation.scan_fusion import Fan, wrap
 
 _ap = argparse.ArgumentParser()
@@ -61,6 +62,10 @@ NEED = DIST + 0.35          # clearance required ahead, goal plus a margin
 # guard for a turn is the nearest return anywhere, not just ahead.
 TURN_NEED = 0.35
 TURN_ABORT = 0.20
+# general_goal_checker's xy_goal_tolerance in nav2_params_robot.yaml. A success
+# may stop this far short, so the false-success check allows for it. A goal
+# shorter than this (plus slack) cannot be told apart from not moving.
+XY_TOL = 0.15
 
 # The leash, derived from the distance rather than fixed. This chassis manages
 # about 0.20 m/s flat out and rather less under DWB, so 0.08 m/s is a pessimistic
@@ -123,6 +128,21 @@ class Runner(Node):
              abs((math.degrees(f.bearing(i)) + 180) % 360 - 180) <= half]
         return min(v) if v else None
 
+    def ahead_median(self, half=5.0):
+        """Median raw-lidar range within +-half deg of straight ahead.
+
+        The second witness for a straight drive (CLAUDE.md section 2): a
+        median over several beams, raw lidar so a camera false return cannot
+        move it. Meaningless if the robot turned, so drives only.
+        """
+        with self.lock:
+            f = self.raw
+        if f is None:
+            return None
+        v = sorted(r for i, r in enumerate(f.ranges) if f.valid(r) and
+                   abs((math.degrees(f.bearing(i)) + 180) % 360 - 180) <= half)
+        return v[len(v) // 2] if len(v) >= 3 else None
+
     def pose(self):
         try:
             t = self.buf.lookup_transform('map', 'base_link',
@@ -145,6 +165,7 @@ def main():
     rclpy.init()
     n = Runner()
     handle = None
+    sent = None
     try:
         spin_for(n, 6)
         start = n.pose()
@@ -158,6 +179,7 @@ def main():
               ('%.2f' % cf if cf else 'none', '%.2f' % cr if cr else 'none', NEED))
 
         imu0 = n.imu_yaw
+        med0 = n.ahead_median()
         # --- guard 1 -----------------------------------------------------
         if TURN is not None:
             near = n.nearest()
@@ -175,6 +197,9 @@ def main():
                   'goal needs %.2f m.' % ('%.2f' % cf if cf else 'no return',
                                           DIST, NEED))
             return 1
+        if TURN is None and DIST <= XY_TOL + 0.05:
+            print('NOTE  a %.2f m goal is inside the goal tolerance; success '
+                  'will not show whether TF is live.' % DIST)
 
         gx = start[0] + DIST * math.cos(start[2])
         gy = start[1] + DIST * math.sin(start[2])
@@ -196,6 +221,12 @@ def main():
                   % (math.degrees(TURN), math.degrees(gyaw)))
         print('leash       %.0f s' % TIMEOUT)
 
+        # The server's reply to a freshly started client can be lost when the
+        # client's response reader is not yet discovered (2026-10-01, load ~9:
+        # bt_navigator "Failed to send goal response (timeout)"). Spinning a
+        # little after wait_for_server gives discovery time to finish. It
+        # lowers the odds; the cancel-all in `finally` is what makes it safe.
+        spin_for(n, 3)
         sent = time.time()
         fut = n.ac.send_goal_async(NavigateToPose.Goal(pose=g))
         while rclpy.ok() and not fut.done() and time.time() - sent < 15:
@@ -268,11 +299,26 @@ def main():
                       % (elapsed, math.degrees(imu_turn)))
                 return 2
             return 0
-        if res_fut.done() and res_fut.result().status == 4 and travelled < 0.15:
-            print('\n*** FALSE SUCCESS: Nav2 reported the goal reached after '
-                  '%.1f s having moved %.3f m. This is the frozen-TF signature '
-                  '-- the hang is NOT cured. ***' % (elapsed, travelled))
-            return 2
+        med1 = n.ahead_median()
+        lidar_prog = (med0 - med1) if (med0 is not None and med1 is not None) else None
+        print('lidar ahead median %s -> %s  (progress %s)'
+              % (fmt(med0), fmt(med1), fmt(lidar_prog)))
+        if status == 4 and end_pose:
+            verdict = drive_verdict(start, end_pose, (gx, gy), XY_TOL,
+                                    lidar_progress=lidar_prog)
+            left = math.hypot(gx - end_pose[0], gy - end_pose[1])
+            print('verdict     %s (map pose %.3f m from goal, tolerance %.2f)'
+                  % (verdict, left, XY_TOL))
+            if verdict == 'pose_disagrees':
+                print('NOTE  the lidar says the robot arrived; Cartographer\'s map '
+                      'pose says it is short. Not a TF freeze.')
+            if verdict == 'false_success':
+                print('\n*** FALSE SUCCESS: Nav2 reported the goal reached after '
+                      '%.1f s; map pose and lidar both put the robot short '
+                      '(%.3f m from it, lidar progress %s). Check controller_server '
+                      'for "Transform data too old": a frozen Transform time is '
+                      'the TF freeze. ***' % (elapsed, left, fmt(lidar_prog)))
+                return 2
         return 0
     finally:
         # --- guard 3: stop on every exit path ---
@@ -280,6 +326,20 @@ def main():
             if handle is not None:
                 handle.cancel_goal_async()
                 spin_for(n, 2)
+            elif sent is not None:
+                # A goal went out but no handle came back. Nav2 may still
+                # have accepted it and be driving, with nothing here able to
+                # cancel it by ID, so cancel EVERY goal on the server: a zero
+                # goal ID and zero stamp mean "all" in CancelGoal.
+                print('cancel-all  no goal handle; cancelling every goal on '
+                      'navigate_to_pose')
+                cli = n.create_client(CancelGoal,
+                                      'navigate_to_pose/_action/cancel_goal')
+                if cli.wait_for_service(timeout_sec=5.0):
+                    cli.call_async(CancelGoal.Request())
+                    spin_for(n, 3)
+                else:
+                    print('cancel-all  service not found; cancel by hand')
         except Exception:
             pass
         try:

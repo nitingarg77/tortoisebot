@@ -59,3 +59,38 @@ def quaternion_from_yaw(yaw):
 def yaw_from_quaternion(x, y, z, w):
     """Yaw from a quaternion, in radians."""
     return math.atan2(2 * (w * z + x * y), 1 - 2 * (y ** 2 + z ** 2))
+
+
+def drive_verdict(start, end, goal, xy_tol, slack=0.05, lidar_progress=None):
+    """Judge a SUCCEEDED drive goal.
+
+    Returns 'ok', 'false_success', 'untestable' or 'pose_disagrees'.
+
+    A frozen TF buffer makes Nav2 report success with the robot still near its
+    start (MODULE.md). The test is how far the robot ENDED from the goal, not
+    how far it travelled: a success inside the goal checker's `xy_tol` can
+    legitimately stop up to `xy_tol` short. On 2026-10-01 a 0.30 m goal with
+    0.15 m tolerance stopped after 0.149 m, correctly, and a fixed
+    "travelled < 0.15" rule called it a false success.
+
+    'untestable' when the goal is itself within tolerance (plus slack) of the
+    start: there, a robot that never moved also counts as arrived.
+
+    The poses come from Cartographer, which is not an independent witness:
+    with no encoders its map pose is itself an estimate. `lidar_progress` is
+    the drop in range to whatever is straight ahead (a median over a few
+    beams, straight drives only). When the pose says short but the lidar says
+    the robot covered the distance, the verdict is 'pose_disagrees', not a
+    false success. On 2026-10-01 a 0.50 m goal ended 0.231 m short by map pose
+    (0.271 m travelled, 5.9 deg turned against the IMU's 1.0 deg), while the
+    lidar ahead dropped 0.34 m, enough to be within tolerance.
+    """
+    to_goal = math.hypot(goal[0] - start[0], goal[1] - start[1])
+    if to_goal <= xy_tol + slack:
+        return 'untestable'
+    left = math.hypot(goal[0] - end[0], goal[1] - end[1])
+    if left <= xy_tol + slack:
+        return 'ok'
+    if lidar_progress is not None and lidar_progress >= to_goal - xy_tol - slack:
+        return 'pose_disagrees'
+    return 'false_success'

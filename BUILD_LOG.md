@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-10-01 — tf2 0.25.24 overlaid on the robot: 0 freezes in 4 join/leave runs (6 of 7 before), and RViz on the box unfrozen
+## 2026-10-01 — tf2 0.25.24 overlaid on the robot: 0 freezes in 4 join/leave runs (6 of 7 before), and RViz on the box unfrozen; first navigation goals on it, and two one_goal.py bugs
 
 Follows 09-30's root cause: an ABBA deadlock in tf2 0.25.23, fixed upstream
 in 0.25.24 but not yet in apt.
@@ -51,8 +51,47 @@ waiting in `do_poll` at every 30 s sample. One run each way.
 
 ### Open
 
-- Navigation with real goals on the overlay; so far only FollowPath probes
-  with motion capped.
+- A full-length goal on the overlay. The goals below covered at most 0.34 m,
+  because the camera band kept refusing anything longer.
+
+### Navigation goals on the overlay, and two `one_goal.py` bugs
+
+Cartographer and Nav2 were restarted after the robot was moved by hand.
+`controller_server` mapped the overlay `libtf2.so`, and every run logged
+**zero** "Transform data too old" lines: no TF freeze.
+
+| goal | Nav2 | map pose | lidar ahead (median, raw) |
+|---|---|---|---|
+| 0.30 m | SUCCEEDED 1.4 s | 0.149 m, 0.152 m short | not recorded |
+| 0.50 m | SUCCEEDED 2.8 s | 0.271 m, 0.231 m short; yaw −5.9° (IMU −1.0°) | 1.32 → 0.98 m: **0.34 m** |
+| 0.30 m | never executed | — | — |
+
+- **The "travelled < 0.15" false-success rule was wrong.** The first 0.30 m
+  goal stopped inside the 0.15 m `xy_goal_tolerance`, correctly. Replaced by
+  `places.drive_verdict`, which judges how far the robot *ended* from the goal
+  and reports `untestable` for goals inside the tolerance. 9 desk tests,
+  including both of today's runs.
+- **Cartographer's map pose is not an independent witness.** On the 0.50 m
+  goal, the lidar progress (0.34 m) puts the robot within tolerance, so Nav2
+  was right. The map pose lagged by about 7 cm and 5°. A minute later, with no
+  motion commanded, it had moved forward 0.12 m, to about where the lidar put
+  the robot. `drive_verdict` now takes the lidar median as a second witness
+  and returns `pose_disagrees` rather than `false_success` when the two
+  disagree. Single-beam-band evidence, one run.
+- **A lost acceptance reply left a goal uncancellable.** For the third goal,
+  `bt_navigator` logged "Failed to send goal response (timeout): client will
+  not receive response". A freshly started client's reply channel had not
+  been discovered at load ~9. The script saw "rejected" and held no handle, so
+  its `finally` cancel did nothing. Nav2 did not execute that goal (no "Begin
+  navigating"), so nothing moved, but it could have. `one_goal.py` now cancels
+  every goal on the server (zero-ID `CancelGoal`) when a goal was sent and no
+  handle came back. It also spins 3 s after `wait_for_server`, which only
+  lowers the odds.
+- **The camera's 0.68 m band.** `/scan_fused` intermittently shows a flat
+  0.68–0.69 m return 6–13° right of ahead, which the lidar does not see. It
+  showed up at three robot positions at the same range, so it is probably a
+  false return fixed to the robot, not an object. Unconfirmed; it blocks every
+  goal over 0.30 m.
 - Remove both overlays when apt ships tf2 0.25.24.
 - After the reboot, `imu_node` rejects bursts of implausible samples
   (|accel| 318 m/s², non-unit quaternions): the known IMU issue, still open.
