@@ -46,7 +46,10 @@ this): 2.75° up, then 0.25° up, then **4.5° down** (41 lidar beams; the
 tops, as before). The camera now sees floor from **0.24 m** of base_link,
 about 13 cm ahead of the front, instead of 0.67 m, and 3 m is still in view.
 Live at −4.5°, camera against lidar on opaque surfaces: 2.08–2.71 m against
-2.18–3.09 m.
+2.18–3.09 m. `camera_pitch_up_deg` set to −4.5 in `autobringup.launch.py`,
+with `floor_scan.py`'s default and docstring following it, and
+`fit_camera_tilt.py`'s search range widened to ±20° to hold a camera aimed
+this far down (`cf74b7b`).
 
 ### And the threshold that came with it
 
@@ -65,10 +68,15 @@ and 30 with a black cable 0.37 m ahead:
 | **80** | **0 / 0** | 810 | 21.0 / 21.1 |
 | 90 | 0 / 0 | 810 | 18.9 / 19.3 |
 
-80 set in `autobringup.launch.py`. Live at −4.5° and 80 (both read back with
-`ros2 param get`): the cable at 0.36–0.41 m from +15° to −9° where the lidar
-saw straight past it to 3–5 m, and the corners at 1.72–1.80 m against the
-lidar's 2.3 m (were 0.24–0.31 m).
+80 set in `autobringup.launch.py` (`cf74b7b`). Live at −4.5° and 80 (both read
+back with `ros2 param get`): the cable at 0.36–0.41 m from +15° to −9° where
+the lidar saw straight past it to 3–5 m, and the corners at 1.72–1.80 m
+against the lidar's 2.3 m (were 0.24–0.31 m).
+
+`test_floor_geometry.py`'s panel and blind-zone cases, measured on the old
+10.1° mount, now pin that mount as `OLD_MOUNT` instead of being overwritten,
+and the blind-zone and horizon-row cases are asserted for both mounts
+(`cf74b7b`).
 
 ### Open
 
