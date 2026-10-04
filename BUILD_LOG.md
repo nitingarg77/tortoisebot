@@ -6,6 +6,31 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
+## 2026-10-04 — dev-organisation kit adopted (T-000)
+
+### What was built
+
+Ticket T-000 brought in the `~/.claude/kit` ticket workflow: `.claude/kit-version`
+(0.1.2) and `.claude/kit.conf` (hooks config — protected branch
+`frontier-exploration`, no auto-format, `ruff check --select E9,F63,F7,F82`
+lint, the system-python `./run_tests.sh` test command), a new "Dev
+organisation" section appended to `CLAUDE.md` (sections 1-8 unchanged),
+`docs/WORKFLOW.md` describing the seven-command phase table
+(`/plan /design /implement /review /release /incident /status`), and
+`docs/templates/` (CLAUDE.md, adr, architecture, incident, postmortem,
+release-notes, requirements, test-report, ticket) plus an empty
+`docs/tasks/.gitkeep` (`8855244`).
+
+Doc/config only — no source files touched, no tests added or run.
+
+### Open
+
+- The kit's hooks (lint-on-edit, test-before-finish, per-agent folder
+  restrictions) are declared in `.claude/kit.conf` and `docs/WORKFLOW.md` but
+  not yet exercised by a real ticket end to end.
+
+---
+
 ## 2026-10-01 (evening) — first auto-mapping run on the overlay (10 min, 25.5 m, clean map); the drive home ended in cables under a desk; camera re-aimed 4.5° down and its edge threshold raised to 80
 
 ### Auto-mapping
