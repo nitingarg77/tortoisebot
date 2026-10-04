@@ -175,3 +175,32 @@ to know which numbers to re-measure and how.
 State what was measured and what is still unverified. Name the alternatives
 ruled out and how. If something is a hypothesis, label it: `5ca83df` says
 "Written as indicated, not proven" because the A/B behind it was one run each.
+
+---
+
+## Dev organisation
+
+Added by ticket T-000 (kit version in `.claude/kit-version`). Sections 1-8 above remain the engineering standards; this block adds the ticket workflow. Hooks read `.claude/kit.conf`; keep it in step with this block.
+
+**What this repo is.** The `tortoisebot` ROS 2 Humble stack (Python nodes, launch files, Nav2 / Cartographer config) for a differential-drive Raspberry Pi 4 robot with lidar, camera and IMU. Fork of `rigbetellabs/tortoisebot` (`upstream`); our work is on `frontier-exploration`. It is a nested git repo inside the `tb_ws` colcon workspace (`tb_ws/src/tortoisebot`); `tb_ws` itself is not a git repo.
+
+**Layout.** `tortoisebot_{bringup,control,description,firmware,gazebo,imu,navigation,slam}/` ROS packages; `v4l2_camera/`, `ydlidar_ros2_driver/`, `YDLidar-SDK/` vendored; `tf2_overlay.sh` tf2 deadlock overlay (see `MODULE.md`); `run_tests.sh` and `check_names.sh` the desk checks.
+
+**Commands**
+- Fast test (CPU, no ROS, no robot, no GPU, no network): `env PATH=/usr/bin:/bin:$PATH PYTHONDONTWRITEBYTECODE=1 ./run_tests.sh`. Baseline 2026-10-04: **228 passed** (firmware 37, navigation 176, imu 15) plus the undefined-names check over 53 files. System python3 is required (cv2, numpy, pytest, pyflakes); with a venv python first on PATH navigation fails on `import cv2`.
+- NOT covered: running nodes, launch files, Nav2/Cartographer behaviour, `colcon build`, `tortoisebot_control` flake8/pep257/copyright tests, the robot itself.
+- Lint (hook-enforced): `ruff check --select E9,F63,F7,F82 <file>` (errors only). One known finding: vendored `tortoisebot_control/.../teleop_twist_keyboard.py` `msvcrt` (win32-guarded). No auto-formatter.
+- Build: `colcon build` from `tb_ws` is a heavy job; never inline, ask the owner first.
+- Heavy jobs (simulation, SLAM/Nav2 runs, builds, anything GPU): never inline; shared machine (RTX 3060 with ComfyUI, oomd kills at memory pressure). One at a time, ask the owner first.
+
+**Hardware boundary.** Anything that publishes `cmd_vel` or touches the robot is a ticket of type `job` and follows section 2 (clearance guard, did-it-move check, stop on every exit, sized leash). Never run it autonomously; the owner is present at the robot. Pure logic stays in ROS-free modules with tests (section 3).
+
+**Git.** Protected branch `frontier-exploration` (the working line; upstream default is `ros2-humble`). One ticket per branch `feature/<T-id>-<slug>`; no direct commits or pushes to it. Author nitingarg77 <nitingarg77@gmail.com>; subject `<T-id>: <summary>`; last line `Co-Authored-By: Veuniq Lab`; no Claude attribution; stage by path. A post-commit hook updates `BUILD_LOG.md`; do not edit it by hand. `origin` is `nitingarg77/tortoisebot`; never push without the owner's say-so. `.github/` is owner-only.
+
+**Definition of done.** Fast test passes with count > 0; lint clean; new behaviour has tests; every acceptance criterion demonstrably met with a measurement (section 1); docs updated; reviewed (`/review`).
+
+**Workflow** (`docs/WORKFLOW.md`): `/plan` -> owner approves scope -> `/design` -> owner approves design -> `/implement T-n` -> `/review T-n` -> `/release v` -> owner approves deploy. `/incident` and `/status` any time. Handover documents live in `docs/{requirements,architecture,tasks,test-reports,releases,incidents}`; templates in `docs/templates/`.
+
+**Program layer (existing, not replaced).** `MODULE.md` (what the code does, traps, tf2 deadlock), `README.md`, `BUILD_LOG.md`, sections 1-8 above.
+
+**If you cannot finish**, say so plainly and say what blocks you. Never report success you did not achieve.
