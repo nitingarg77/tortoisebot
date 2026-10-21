@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-10-21 — auto-mapping run 3 test report, the 5 cm tolerance tightened, and a run 4 test plan written (A-005)
+## 2026-10-21 — auto-mapping run 3 test report, the 5 cm tolerance tightened, a run 4 test plan written (A-005), a `nav_course.py` pause flag for it, and a rosbag recorder for 3D-twin camera walks
 
 ### What was built
 
@@ -91,6 +91,13 @@ proposes a direct test of the open hypothesis above: comparing measured coast di
 
 `./run_tests.sh`: 245 passed, unchanged from `c6b2f5f` — this commit added no code.
 
+### `nav_course.py --pause`, for the settled-pose measurement run 4 calls for (`5f66d7d`)
+
+The run 4 plan above calls for measuring the settled pose after each goal; `nav_course.py` gains
+`--pause SECONDS` (default 0, rejected if negative) to hold still for that long after each goal
+before starting the next, printing `settled <place>` once the hold ends. No goal is active during
+the hold, so nothing commands motion while it waits. Not yet used on a run.
+
 ### Open
 
 - Run 3's goal-by-goal numbers remain unread on the robot; the run 4 plan's `rsync` step would fetch
@@ -109,6 +116,20 @@ proposes a direct test of the open hypothesis above: comparing measured coast di
 - The stationary localisation baseline (target under 2 cm excursion at rest) has not been measured;
   the plan notes that above that excursion, the robot's own pose cannot verify a 5 cm criterion and
   the golden-scan witness becomes the only measurement.
+
+### `record_capture.sh`, a rosbag recorder for 3D-twin camera walks (`ea199de`)
+
+Unrelated to A-005. `tortoisebot_firmware/scripts/record_capture.sh` records
+`/camera_node/image_raw/compressed`, `/tf`, `/tf_static`, `/scan`, `/imu` and
+`/odom` to `~/captures/<name>` (rosbag2, sqlite3) for the SiteTwin/radiance_ws
+3D-twin work, run on the Pi with the drivers up (`camera:=True`) and, for
+metric scale, Cartographer so `/tf` carries `map -> base_link`; all processing
+is meant to happen on the dev box. It refuses to start if
+`/camera_node/image_raw/compressed` is silent for 30 s, and refuses to record
+into an existing output directory. Default duration 180 s; stops on SIGINT so
+the bag closes, then prints `ros2 bag info` filtered to duration, message
+counts and the recorded topics. Not run in motion beyond one stationary test
+and one supervised exploration capture.
 
 ---
 
