@@ -105,10 +105,36 @@ Both `general_goal_checker.xy_goal_tolerance` and `FollowPath.xy_goal_tolerance`
 require. The commit message cites run 4 settling at 4-6 cm with the 0.05 value as the reason for
 the extra margin. Not yet run on the robot.
 
+### Run 3's goal table filled in from logs copied to the box (A-006, `da92aff`)
+
+The "not on box" placeholder in A-004's report above is replaced. Run 3's logs
+(`robot_logs/run3/run3.compute.log`, 24,942 lines; `run3.robot.log`, 508 lines) and the supervisor's
+`robot_logs/run3/explore/run.log` (68 lines) are now on the box, and `auto-mapping-run3.md`'s goal
+table is rebuilt from them. Result against the Phase 1 target: **12 goals sent, 0 reached, 0 within
+5 cm**; end distance to target 0.92-2.06 m (median ~1.3 m). 9 "Failed to make progress" events on 8
+of the 12 goals; the other 4 ended by cancellation, a Nav2 abort, or (goal 5) no progress-checker
+failure at all. 7 of the 12 goals were repeats of a frontier that had already failed once
+(`frontier_suppression_attempt_threshold` running at 3, not the 2 A-004 assumed), so only 6 distinct
+frontiers were actually tried. The running explorer reported `occ_threshold=50`, not the package
+default 65 that A-004 had assumed.
+
+The "last 3.5 min facing the skirting" in the original status note is now identified as the pose
+watchdog's stop, not a stuck robot: after goal 12's recoveries it tripped on a pose jump of 0.65 m/s
+(limit 0.50) and stopped the explorer, leaving the robot idle for 220 s up to the 600 s limit.
+
+CPU load, previously a hypothesis (fix 8), is now evidenced: load average 11.8-18.1 throughout the
+run, 64 missed 10 Hz control-loop ticks, 110 exceeded-50 Hz behaviour-tree tick-rate warnings, 14
+action-server acknowledgement timeouts and 7 costmap-clear timeouts, which broke the recovery tree on
+goals 1 and 12. The fix-ranking table in the report is reordered: CPU load moves from 8 to 4, the
+progress-checker fix drops to 5, and the frontier-placement fix (6) now starts from the observed
+`occ_threshold` of 50 rather than the assumed 65.
+
+`./run_tests.sh` not re-run; this commit touched only the report.
+
 ### Open
 
-- Run 3's goal-by-goal numbers remain unread on the robot; the run 4 plan's `rsync` step would fetch
-  them too, but has not been run.
+- The run 4 plan's own log-copy step (`rsync`) is separate from A-006's one-off copy above and has
+  not been run.
 - No rosbag exists for run 3 or run 4 yet; the plan specifies what run 4 should record, not yet done.
 - None of today's parameter changes (`c6b2f5f`, `b553bc2`) have been run on the robot: the slowed
   approach, the new progress checker, the wider slam search window and the now-0.03 tolerance are
