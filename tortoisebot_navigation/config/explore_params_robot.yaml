@@ -16,7 +16,7 @@ frontier_explorer:
 
     # Mirror controller_server's limits in nav2_params_robot.yaml. These only
     # feed the MRTSP time estimate; they do not command the robot.
-    max_linear_speed_vmax: 0.15
+    max_linear_speed_vmax: 0.10
     max_angular_speed_wmax: 1.5
 
     # The upstream defaults (0.8 m) are 2.5x a TurtleBot3's radius. The
@@ -24,6 +24,17 @@ frontier_explorer:
     # 0.5-0.55 m, so a frontier much closer than that is rarely reachable.
     frontier_selection_min_distance: 0.5
     frontier_candidate_min_goal_distance_m: 0.5
+
+    # 5 cm target (A-005). The explorer rejects a goal whose costmap value is
+    # >= occ_threshold (frontier_explorer_core_frontiers.cpp:458-466). With
+    # robot_radius 0.1 and cost_scaling_factor 3.0 the package default 65 keeps
+    # goals ~0.24 m from a lethal cell; 50 keeps them ~0.33 m. A goal needs
+    # robot_radius 0.1 + tolerance 0.05 + the worst pose error seen (0.12 m,
+    # BUILD_LOG.md:316) = 0.27 m clear of the wall, or the 5 cm circle can touch
+    # the impassable inscribed zone. test_precision_params.py derives both
+    # numbers from the costmap params. Cost: fewer frontiers near walls, so less
+    # coverage; rollback is to delete this line.
+    occ_threshold: 50
 
     # YDLidar on the robot: 12 m range, 360 degrees, matching the upstream
     # defaults. Stated here so a lidar swap has one obvious place to change.

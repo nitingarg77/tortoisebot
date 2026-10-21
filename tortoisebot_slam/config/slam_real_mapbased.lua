@@ -63,7 +63,13 @@ TRAJECTORY_BUILDER_2D.missing_data_ray_length = 8.5
 -- constrains rotation between scans.
 TRAJECTORY_BUILDER_2D.use_imu_data = true
 TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = true
-TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.1
+-- 0.1 m -> 0.3 m (A-005), the value slam_real.lua already carries. This config is
+-- the scan-matching odometer that goal runs rely on, on the same loaded Pi. The
+-- 2026-09-25 test in slam_real.lua showed a 0.1 m window losing the match on a
+-- late scan at 0.15 m/s and running odom->base_link away to -559 m. Here the
+-- speed is capped at 0.10 m/s, which shortens but does not remove the risk.
+-- Not measured on this config; run 4 compares stationary drift and runaway.
+TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.3
 TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.translation_delta_cost_weight = 10.
 TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.rotation_delta_cost_weight = 1e-1
 TRAJECTORY_BUILDER_2D.motion_filter.max_angle_radians = math.rad(0.2)

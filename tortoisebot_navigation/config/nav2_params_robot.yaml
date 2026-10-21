@@ -119,18 +119,31 @@ controller_server:
     goal_checker_plugins: ["general_goal_checker"] 
     controller_plugins: ["FollowPath"]
     progress_checker:
-      plugin: "nav2_controller::SimpleProgressChecker"
       # 0.25 m in 20 s, down from 0.5 m in 10 s. The motors are open loop
       # with no encoders: real speed is well below the commanded 0.15 m/s
       # (0.04 m/s average while exploring, 2026-09-25), and turning in place
       # covers no distance at all, so the stricter check abandoned 11 of 12
       # frontier goals as "Failed to make progress".
-      required_movement_radius: 0.25
+      #
+      # A-005 (5 cm target): PoseProgressChecker instead of the simple one, so a
+      # turn in place counts as progress (rotation of 0.5 rad resets the clock)
+      # as well as 0.10 m of travel. The slow final approach and the in-place
+      # turns near walls that abandoned 9 goals in run 3 both cover little
+      # distance. Radius 0.25 -> 0.10 keeps the same 20 s allowance: at the
+      # measured 0.04 m/s, 0.10 m takes 2.5 s. Caveat: a pose that jumps 7-12 cm
+      # (BUILD_LOG.md:314-318) can reset the clock by itself, so this check is
+      # looser against a true stall than its numbers suggest.
+      plugin: "nav2_controller::PoseProgressChecker"
+      required_movement_radius: 0.10
+      required_movement_angle: 0.5
       movement_time_allowance: 20.0
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.15
+      # 0.15 -> 0.05 (A-005, owner decision D-031/D-032): the old value let
+      # Nav2 declare success 14-20 cm short (BUILD_LOG.md:304-305, 221-223).
+      # Must equal FollowPath.xy_goal_tolerance below; see the note there.
+      xy_goal_tolerance: 0.05
       yaw_goal_tolerance: 0.25
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
@@ -138,11 +151,16 @@ controller_server:
       debug_trajectory_details: False
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.15
+      # 0.15 -> 0.10 (A-005): slow final approach. DWB has no distance-based
+      # speed scaling, so the cap is the lever; coasting distance should shrink
+      # with speed. HYPOTHESIS: the robot's coast is unmeasured (BUILD_LOG.md:232),
+      # run 4 measures it. Mirrored in velocity_smoother and
+      # explore_params_robot.yaml. Rollback: 0.15 in all three.
+      max_vel_x: 0.10
       max_vel_y: 0.0
       max_vel_theta: 1.5
       min_speed_xy: 0.0
-      max_speed_xy: 0.22
+      max_speed_xy: 0.10
       min_speed_theta: 0.4
       acc_lim_x: 1.0
       acc_lim_y: 0.0
@@ -161,8 +179,15 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.1
+      # DWB's RotateToGoal critic: inside xy_goal_tolerance it penalises speed
+      # above trans_stopped_velocity and, once slower, rotates in place. Keep
+      # this EQUAL to general_goal_checker's tolerance. Widening it to get an
+      # earlier slow-down zone would make the robot stop translating and spin
+      # at that radius, never closing the last centimetres.
       xy_goal_tolerance: 0.05
-      trans_stopped_velocity: 0.25
+      # 0.25 -> 0.02 (A-005). 0.25 exceeded max_vel_x 0.15, so the robot always
+      # counted as "stopped" and the speed penalty could never act.
+      trans_stopped_velocity: 0.02
       short_circuit_trajectory_evaluation: True
       stateful: True
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
@@ -346,7 +371,12 @@ planner_server:
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner/NavfnPlanner"
-      tolerance: 0.5
+      # 0.5 -> 0.1 (A-005). A plan may end up to `tolerance` short of an
+      # unreachable goal. As I recall Humble's controller_server judges
+      # arrival against the plan's last pose, which would report such a goal
+      # as reached (NOT checked in the installed source; run 4 logs plan end
+      # vs goal). 0.1 is two cells: rounding, too small to hide a bad goal.
+      tolerance: 0.1
       use_astar: false
       allow_unknown: true
 
@@ -389,7 +419,7 @@ waypoint_follower:
       enabled: True
       waypoint_pause_duration: 1
 
-# Limits mirror controller_server's own (max_vel_x 0.15, max_vel_theta 1.5,
+# Limits mirror controller_server's own (max_vel_x 0.10, max_vel_theta 1.5,
 # acc_lim_x 1.0, decel_lim_x -1.0, acc/decel_lim_theta 1.5/-1.5). Without this
 # section the smoother falls back to nav2 defaults (0.50 m/s, 2.5 m/s^2), which
 # are looser than the robot can do, so it would limit nothing.
@@ -399,8 +429,8 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.15, 0.0, 1.5]
-    min_velocity: [-0.15, 0.0, -1.5]
+    max_velocity: [0.10, 0.0, 1.5]
+    min_velocity: [-0.10, 0.0, -1.5]
     max_accel: [1.0, 0.0, 1.5]
     max_decel: [-1.0, 0.0, -1.5]
     odom_topic: "odom"
