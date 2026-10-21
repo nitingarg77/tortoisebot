@@ -184,10 +184,15 @@ def main():
     ap.add_argument('--places', metavar='FILE',
                     help='YAML of {name: [x, y, yaw]}; the default places are '
                          'simulator coordinates and are wrong on a real robot')
+    ap.add_argument('--pause', type=float, default=0.0, metavar='SECONDS',
+                    help='hold still this long after each goal before the '
+                         'next, so the settled pose can be measured (run 4)')
     ap.add_argument('--record', metavar='FILE',
                     help='drive the robot around and write its positions to '
                          'FILE instead of running a course')
     args = ap.parse_args()
+    if args.pause < 0:
+        ap.error('--pause must be >= 0')
 
     places, order = (load_places(args.places) if args.places
                      else (PLACES, ORDER))
@@ -219,6 +224,10 @@ def main():
             print(f'{status} in {secs:5.1f}s'
                   + (f', {err:.2f} m from target' if err is not None else ''),
                   flush=True)
+            if args.pause > 0:
+                # No goal is active here, so nothing commands motion while we wait.
+                node.spin_until(lambda: False, args.pause)
+                print(f'     settled {place}', flush=True)
 
     ok = sum(1 for r in rows if r[2] == 'SUCCEEDED')
     print(f'\n{"#":>2}  {"goal":<14} {"result":<20} {"time":>7}  {"error":>7}')
