@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-10-21 — auto-mapping run 3 test report, then the 5 cm tolerance tightened (A-005)
+## 2026-10-21 — auto-mapping run 3 test report, the 5 cm tolerance tightened, and a run 4 test plan written (A-005)
 
 ### What was built
 
@@ -66,20 +66,49 @@ passed**. These are config tests: they check the numbers agree with each other a
 costmap's own geometry, not that the robot reaches 5 cm. Everything that needs the robot is
 unverified.
 
+### Run 4 test plan written (`92cd875`)
+
+`docs/test-reports/run4-precision-5cm-plan.md` adds the plan for the run that is meant to verify
+`c6b2f5f`'s changes against hardware. Docs only, nothing touched the robot. It lists every
+`c6b2f5f` param change against a one-line reason; defines two goal sets — Set P, 10 hand-taught
+goals (0.5 m forward legs, lateral steps that force a turn, a return to start) that are the pass/fail
+gate because their positions are known, and Set E, a 10-minute exploration run reported separately;
+specifies what to record (a `ros2 bag` topic list, per-goal Nav2 logs, Pi temperature/throttling) and
+how to copy it back from the robot to the box afterwards (`rsync`, robot files kept until the copy is
+confirmed); a stationary localisation baseline (target under 2 cm excursion at rest, in both AMCL and
+SLAM mode) to be measured before any goal is judged; two ways to measure the per-goal error — taped
+floor markers, or, without markers, a golden-scan ICP witness plus a tape-to-wall check, kept
+independent of Cartographer's own pose; a pass criterion of at least 9 of 10 Set P goals within 0.05 m
+at both success and at rest, in at least one localisation mode, repeated at least 3 times before
+calling a pass; and a rollback, both a full `git checkout` of the config and single-knob reverts per
+parameter.
+
+The plan records two owner decisions: **D-031 resolves an open question from the run 3 report** — the
+5 cm target applies to exploration goals (Set E), not only named-place navigation goals — and D-032,
+that the fix is tighter tolerance plus better localisation, with no encoders in Phase 1. It also
+proposes a direct test of the open hypothesis above: comparing measured coast distance at the 0.10 and
+0.15 m/s speed caps.
+
+`./run_tests.sh`: 245 passed, unchanged from `c6b2f5f` — this commit added no code.
+
 ### Open
 
-- Run 3's goal-by-goal numbers remain unread on the robot.
-- Whether the 5 cm target applies to frontier-exploration goals or only to named-place
-  navigation goals is unresolved (open question 2 in the report).
-- No rosbag exists for run 3; the report's rank-0 fix is to start recording one.
+- Run 3's goal-by-goal numbers remain unread on the robot; the run 4 plan's `rsync` step would fetch
+  them too, but has not been run.
+- No rosbag exists for run 3 or run 4 yet; the plan specifies what run 4 should record, not yet done.
 - None of today's parameter changes (`c6b2f5f`) have been run on the robot: the slowed approach,
   the new progress checker, the wider slam search window and the 5 cm tolerance itself are all
-  unmeasured against hardware.
-- Whether the lower speed cap actually shrinks the coasting distance is a stated hypothesis, not
-  a measurement.
+  unmeasured against hardware. Run 4 is the plan to do this; it has not started.
+- Whether the lower speed cap actually shrinks the coasting distance is a stated hypothesis; the run 4
+  plan proposes to measure it directly but has not done so.
 - Whether Humble's `controller_server` judges arrival against the plan's last pose (which would
   make the tightened planner tolerance matter for an unreachable goal) was not checked in the
   installed source; the commit message says a future run should log plan end vs. goal.
+- Floor markers for Set P and copying back the run 3 robot logs are both listed in the run 4 plan as
+  still undecided/pending.
+- The stationary localisation baseline (target under 2 cm excursion at rest) has not been measured;
+  the plan notes that above that excursion, the robot's own pose cannot verify a 5 cm criterion and
+  the golden-scan witness becomes the only measurement.
 
 ---
 
