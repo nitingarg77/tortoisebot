@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-10-21 — auto-mapping run 3 test report (A-005)
+## 2026-10-21 — auto-mapping run 3 test report, then the 5 cm tolerance tightened (A-005)
 
 ### What was built
 
@@ -26,12 +26,60 @@ Nav2 goal checker's `xy_goal_tolerance` (currently 0.15) down to config hygiene,
 open questions for the owner, including whether the robot's robot-side logs can be copied to the
 box for a follow-up run.
 
+### Tolerance tightened to 5 cm, and three other faults fixed alongside it (`c6b2f5f`)
+
+Acting on the report's top-ranked fix, `nav2_params_robot.yaml`'s `general_goal_checker.xy_goal_tolerance`
+goes 0.15 → 0.05, citing the 14–20 cm-short figure above (BUILD_LOG.md:221–223, 304–305).
+`FollowPath.xy_goal_tolerance` stays at 0.05 but is now test-pinned equal to the checker's value,
+and the planner's `GridBased.tolerance` goes 0.5 → 0.1 so a plan can no longer end half a metre
+short of an unreachable goal.
+
+Three more faults came out of making 5 cm hold in practice, not just in the goal checker:
+
+- `FollowPath.trans_stopped_velocity` was 0.25, above `max_vel_x` (0.15 at the time), so DWB's
+  RotateToGoal critic always saw the robot as "stopped" and its speed penalty never fired. Set to
+  0.02.
+- The progress checker was `SimpleProgressChecker`, which does not count an in-place turn as
+  progress; run 3's 9 "Failed to make progress" aborts were exactly this, near walls. Swapped for
+  `PoseProgressChecker` (radius 0.25 → 0.10, `required_movement_angle` 0.5 added, 20 s kept).
+- `max_vel_x` 0.15 → 0.10, `max_speed_xy` 0.22 → 0.10, and `velocity_smoother`'s
+  `max/min_velocity` ±0.15 → ±0.10, to slow the final approach, mirrored in
+  `explore_params_robot.yaml`'s `max_linear_speed_vmax`. Labelled a hypothesis in the commit: the
+  robot's coasting distance is unmeasured, so whether a lower speed cap actually shrinks it is
+  still open.
+
+`explore_params_robot.yaml`'s `occ_threshold` (package default 65) is lowered to 50 so frontier
+goals land further from walls — derived as `robot_radius` 0.1 + the 0.05 tolerance + the worst
+pose error seen on the robot, 0.12 m (BUILD_LOG.md:316), giving goals ≥ ~0.33 m of clearance.
+`slam_real_mapbased.lua`'s `linear_search_window` 0.1 → 0.3, matching the value `slam_real.lua`
+already carries after the 2026-09-25 runaway-on-late-scans fault; explicitly not measured on this
+config.
+
+Left unchanged, on evidence cited in the commit: `slam_real.lua` itself (carried run 1, 25.5 m, 21
+goals clean), inflation (today's goals already sit outside the inscribed zone), AMCL, the DWB
+critics, and the controller type (RPP rotates only at the start and has its own
+`min_approach_linear_velocity`, which the commit says is untestable at a desk).
+
+`test_precision_params.py` adds 17 tests pinning these values against each other (each one seen
+red when its guarded value is reverted) — taking the suite from the 228 baseline to **245
+passed**. These are config tests: they check the numbers agree with each other and with the
+costmap's own geometry, not that the robot reaches 5 cm. Everything that needs the robot is
+unverified.
+
 ### Open
 
 - Run 3's goal-by-goal numbers remain unread on the robot.
 - Whether the 5 cm target applies to frontier-exploration goals or only to named-place
   navigation goals is unresolved (open question 2 in the report).
 - No rosbag exists for run 3; the report's rank-0 fix is to start recording one.
+- None of today's parameter changes (`c6b2f5f`) have been run on the robot: the slowed approach,
+  the new progress checker, the wider slam search window and the 5 cm tolerance itself are all
+  unmeasured against hardware.
+- Whether the lower speed cap actually shrinks the coasting distance is a stated hypothesis, not
+  a measurement.
+- Whether Humble's `controller_server` judges arrival against the plan's last pose (which would
+  make the tightened planner tolerance matter for an unreachable goal) was not checked in the
+  installed source; the commit message says a future run should log plan end vs. goal.
 
 ---
 
