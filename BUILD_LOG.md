@@ -6,6 +6,35 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
+## 2026-10-21 — auto-mapping run 3 test report (A-005)
+
+### What was built
+
+Ticket A-005 added `docs/test-reports/auto-mapping-run3.md`, a read-only write-up of run 3
+(2026-10-02) for CoS task A-004 (`e65ada8`). No code changed.
+
+### What it found
+
+Run 3's per-goal logs and map are on the robot only (`~/logs/nav/run3.*.log`,
+`~/logs/explore/run3/map.pgm`); reading them needed `ssh tb`, which was out of scope for this
+task, so the report's goal table is marked "not on box" rather than filled in. It also corrects
+the brief it was written against: the "stopped 14–20 cm short" figure is not from run 3 at all —
+it comes from the three 0.5 m forward goals nav6–nav8 on 2026-10-01, which all reported
+SUCCEEDED. Run 3's 9 goals instead ended in "Failed to make progress" near walls, a separate
+failure mode. The report ranks candidate fixes for the 5 cm Phase 1 target, from tightening the
+Nav2 goal checker's `xy_goal_tolerance` (currently 0.15) down to config hygiene, and lists six
+open questions for the owner, including whether the robot's robot-side logs can be copied to the
+box for a follow-up run.
+
+### Open
+
+- Run 3's goal-by-goal numbers remain unread on the robot.
+- Whether the 5 cm target applies to frontier-exploration goals or only to named-place
+  navigation goals is unresolved (open question 2 in the report).
+- No rosbag exists for run 3; the report's rank-0 fix is to start recording one.
+
+---
+
 ## 2026-10-04 — dev-organisation kit adopted (T-000)
 
 ### What was built
