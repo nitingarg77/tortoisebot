@@ -98,14 +98,21 @@ The run 4 plan above calls for measuring the settled pose after each goal; `nav_
 before starting the next, printing `settled <place>` once the hold ends. No goal is active during
 the hold, so nothing commands motion while it waits. Not yet used on a run.
 
+### `xy_goal_tolerance` tightened again, 0.05 -> 0.03, for margin under the 5 cm target (`b553bc2`)
+
+Both `general_goal_checker.xy_goal_tolerance` and `FollowPath.xy_goal_tolerance` in
+`nav2_params_robot.yaml` go 0.05 -> 0.03, kept equal to each other as the existing config notes
+require. The commit message cites run 4 settling at 4-6 cm with the 0.05 value as the reason for
+the extra margin. Not yet run on the robot.
+
 ### Open
 
 - Run 3's goal-by-goal numbers remain unread on the robot; the run 4 plan's `rsync` step would fetch
   them too, but has not been run.
 - No rosbag exists for run 3 or run 4 yet; the plan specifies what run 4 should record, not yet done.
-- None of today's parameter changes (`c6b2f5f`) have been run on the robot: the slowed approach,
-  the new progress checker, the wider slam search window and the 5 cm tolerance itself are all
-  unmeasured against hardware. Run 4 is the plan to do this; it has not started.
+- None of today's parameter changes (`c6b2f5f`, `b553bc2`) have been run on the robot: the slowed
+  approach, the new progress checker, the wider slam search window and the now-0.03 tolerance are
+  all unmeasured against hardware. Run 4 is the plan to do this; it has not started.
 - Whether the lower speed cap actually shrinks the coasting distance is a stated hypothesis; the run 4
   plan proposes to measure it directly but has not done so.
 - Whether Humble's `controller_server` judges arrival against the plan's last pose (which would
