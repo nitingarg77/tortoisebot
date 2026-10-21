@@ -143,7 +143,7 @@ controller_server:
       # 0.15 -> 0.05 (A-005, owner decision D-031/D-032): the old value let
       # Nav2 declare success 14-20 cm short (BUILD_LOG.md:304-305, 221-223).
       # Must equal FollowPath.xy_goal_tolerance below; see the note there.
-      xy_goal_tolerance: 0.05
+      xy_goal_tolerance: 0.03  # margin under 5 cm: with 0.05, run 4 settled at 4-6 cm (2026-10-21)
       yaw_goal_tolerance: 0.25
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
@@ -184,7 +184,7 @@ controller_server:
       # this EQUAL to general_goal_checker's tolerance. Widening it to get an
       # earlier slow-down zone would make the robot stop translating and spin
       # at that radius, never closing the last centimetres.
-      xy_goal_tolerance: 0.05
+      xy_goal_tolerance: 0.03  # keep equal to general_goal_checker
       # 0.25 -> 0.02 (A-005). 0.25 exceeded max_vel_x 0.15, so the robot always
       # counted as "stopped" and the speed penalty could never act.
       trans_stopped_velocity: 0.02
