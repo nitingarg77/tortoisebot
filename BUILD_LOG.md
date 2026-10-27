@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-10-27 — `nav_course.py` can run Set P on the SLAM stack (A-005)
+## 2026-10-27 — `nav_course.py` can run Set P on the SLAM stack, but run 4 itself is blocked on the localiser (A-005)
 
 ### What was built
 
@@ -30,13 +30,44 @@ entry's Open list) — Cartographer's spread sits close to that target but one o
 `./run_tests.sh`: 245 passed, unchanged — this commit added no tests. The TF path itself is NOT
 exercised by any test and is unverified until run on the robot.
 
+### Run 4 attempted: Set P not run, blocked on the localiser (`1dacc3d`)
+
+`docs/test-reports/run4-localisation-findings.md` records the session that followed, using `--pose-source tf`
+above. Result: **NOT RUN, BLOCKED** — no Set P goal was sent. Live parameters read back on
+`/controller_server` matched what is committed: `general_goal_checker.xy_goal_tolerance` and
+`FollowPath.xy_goal_tolerance` both 0.03 (`b553bc2`), `FollowPath.max_vel_x` 0.10, `trans_stopped_velocity`
+0.02, `PoseProgressChecker` active.
+
+AMCL on a freshly hand-saved map (`~/maps/run4_20261027.yaml`) did not converge: one reading each, sd 0.20-0.55
+m, and after a hand-driven ~2 m loop back to the start cross it read (-0.086, -0.120) against a true (0, 0, 0).
+A 7 min 13 s exploration run (the new speed cap, `occ_threshold` 50) hovered near a wall for roughly 300 s
+before the owner's SIGINT, 9 "Failed to make progress" lines, and the supervisor's own stall check never fired
+— the same pattern as run 3 (BUILD_LOG.md:148-149).
+
+Using `--pose-source tf`, 9 of 10 Set P crosses were hand-placed and recorded within 3 cm of the plan, but only
+after 1-4 minutes of settling each; one (p3) read a single steady wrong value (0.99, 0.79 against a taped 1.00,
+0.50) for 6 s before correcting. At cross 10, with the robot stationary and untouched on (0, 0), the `map`
+frame itself jumped 0.41 m in y; the compute log ties this to a Cartographer loop-closure constraint
+("differs by translation 0.41") at that moment. The frame is not rigid to the floor even at rest, which is why
+no Set P goal was judged against it — a goal "within 5 cm" in a frame that can move by tens of cm says nothing
+about the floor. A rigid-frame SLAM variant (loop closure held off for goal runs) is proposed as the next
+experiment; nothing in config changed today.
+
+`./run_tests.sh`: 245 passed, unchanged — this commit added only the report.
+
 ### Open
 
-- Whether `--pose-source tf` actually works end-to-end on the robot (reading a live `map ->
-  base_link` transform through a full Set P run) is unverified; only the desk checks above ran.
-- The stationary localisation baseline is still not fully measured against the run 4 plan's
-  criterion: one of five Cartographer at-rest runs (2.6 cm) exceeded the 2 cm target, and AMCL's
-  divergence on this map means AMCL mode cannot currently supply this baseline at all.
+- Whether `--pose-source tf` works end-to-end is resolved in part: on the robot it supplied the pose for all 9
+  Set P recordings above (`1dacc3d`). A goal run with Nav2 driving from it is still not done, because Set P
+  itself has not run.
+- The stationary localisation baseline: SLAM-side spread (1.59-2.57 cm over 5 x 60 s, one of five runs over the
+  2 cm target) stands as measured above. AMCL did not converge on a freshly hand-saved map (sd 0.20-0.55 m, one
+  reading each) and so still cannot supply this baseline (`1dacc3d`).
+- **New today:** the SLAM `map` frame is not rigid even at rest — it jumped 0.41 m in y with the robot
+  untouched, tied to a Cartographer loop-closure constraint in the compute log (`1dacc3d`). This, not
+  `nav_course.py`, is the reason Set P has not run. Whether a backed-up pose-graph queue (114 items observed) is
+  the cause of the slow settling seen on some crosses is a hypothesis, not instrumented.
+- A rigid-frame SLAM variant (loop closure off for goal runs) is proposed as the next experiment; not started.
 - Everything else listed as open in the 2026-10-21 entry below is unchanged by this commit.
 
 ---
