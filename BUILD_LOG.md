@@ -6,7 +6,7 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
-## 2026-10-27 — `nav_course.py` can run Set P on the SLAM stack, but run 4 itself is blocked on the localiser (A-005)
+## 2026-10-27 — `nav_course.py` can run Set P on the SLAM stack, run 4 itself blocked on the localiser (A-005), and the rigid-frame SLAM variant it led to built at the desk (T-001)
 
 ### What was built
 
@@ -63,6 +63,30 @@ local drift remains. Measure-only — it does not claim 5 cm. Docs only, nothing
 245. The setting that disables global optimisation is to be read from the installed Cartographer version rather
 than assumed (expected `POSE_GRAPH.optimize_every_n_nodes = 0`, per the ticket, pending that check).
 
+### T-001's desk part built: the variant, a launch flag, and tests (`7c4252d`)
+
+`slam_real_rigid.lua` is added as `slam_real.lua` with one line changed, `POSE_GRAPH.optimize_every_n_nodes`
+90 -> 0; a new test (`test_slam_rigid_variant.py`) diffs the two files line by line and asserts that is the
+only difference. `cartographer.launch.py` gains a ROS-free `lua_for()` function and a `rigid_frame` launch
+argument (default `false`) that selects the variant; `autobringup.launch.py` passes `rigid_frame` through,
+since that is where the stack is started — a third source file beyond the ticket's "max 2", recorded in the
+ticket as necessary for the flag to be reachable. With `rigid_frame` unset, `lua_for()` still returns
+`slam_real.lua`, so the default launch is unchanged.
+
+The ticket's item 1 (read the installed Cartographer's semantics for the setting, CLAUDE.md section 1) is done
+at the desk only partly: the 2.0.9004 tag could not be fetched, so the commit reads upstream **master**
+instead (`pose_graph_2d.cc:397`) — optimisation is dispatched only when `optimize_every_n_nodes() > 0`, and
+`ComputeConstraint` still runs at every node regardless, so constraint search and its CPU cost continue even
+with the setting at 0. The ticket's criterion 3 is corrected accordingly: its first draft also required no
+`constraint_builder_2d` "differs by" lines, which this reading says to expect anyway; what the setting is meant
+to stop is those constraints being applied to `map -> odom`. The installed 2.0.9004 semantics are unconfirmed
+and left to criterion 3's robot measurement. Ticket status moves from "ready" to "in progress (desk part done;
+robot measurements not run)".
+
+`./run_tests.sh`: **258 passed** (245 + 13 new). Seen to fail, then pass once fixed: editing the variant to
+differ from `slam_real.lua` in more than the one line, and flipping the launch default. NOT verified: that the
+`map` frame stops jumping, or the drift while driving — ticket criteria 3-5, which need the robot.
+
 ### Open
 
 - Whether `--pose-source tf` works end-to-end is resolved in part: on the robot it supplied the pose for all 9
@@ -75,7 +99,9 @@ than assumed (expected `POSE_GRAPH.optimize_every_n_nodes = 0`, per the ticket, 
   Cartographer loop-closure constraint in the compute log (`1dacc3d`). This, not `nav_course.py`, is the reason
   Set P has not run. Whether a backed-up pose-graph queue (114 items observed) is the cause of the slow settling
   seen on some crosses is a hypothesis, not instrumented.
-- The rigid-frame SLAM variant proposed above is now ticketed as T-001 (`8c74a9f`); not started.
+- The rigid-frame SLAM variant proposed above is ticketed as T-001 (`8c74a9f`) and built at the desk (`7c4252d`):
+  the variant, launch flag and tests exist, but criteria 3-5 (no step above 2 cm at rest for 10 min, repeated
+  cross-10 checks, drift per metre) all need the robot and have not been run.
 - Everything else listed as open in the 2026-10-21 entry below is unchanged by this commit.
 
 ---
