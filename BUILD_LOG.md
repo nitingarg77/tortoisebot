@@ -6,6 +6,41 @@ are on branch `frontier-exploration` unless noted.
 
 ---
 
+## 2026-10-27 — `nav_course.py` can run Set P on the SLAM stack (A-005)
+
+### What was built
+
+`nav_course.py` gains `--pose-source {amcl,tf}` (`2ef1269`). `amcl` stays the default, reading
+`/amcl_pose` as before, so existing use is unchanged. `tf` reads the `map` -> `base_link`
+transform via a `tf2_ros` `Buffer`/`TransformListener` instead, because Cartographer publishes no
+`/amcl_pose`, which had been blocking Set P (the run 4 plan's pass/fail gate, BUILD_LOG.md:71-84)
+from running on the SLAM stack. The pose is refreshed each spin loop when `--pose-source tf` is
+set; `record` and the missing-pose warnings now name whichever source was asked for instead of
+hard-coding AMCL.
+
+### What was measured
+
+On the 2026-10-27 map, AMCL did not converge: after a hand-driven loop it read sd 0.26/0.41 m and
+was ~15 cm off the known start pose (one reading). Cartographer's `map->base_link` held 1.6-2.6 cm
+spread at rest over 5 x 60 s runs. This is a first measurement toward the run 4 plan's stationary
+localisation baseline (target under 2 cm excursion at rest, left unmeasured in the 2026-10-21
+entry's Open list) — Cartographer's spread sits close to that target but one of the five 60 s runs
+(2.6 cm) is still over it, and AMCL on this map is far outside it.
+
+`./run_tests.sh`: 245 passed, unchanged — this commit added no tests. The TF path itself is NOT
+exercised by any test and is unverified until run on the robot.
+
+### Open
+
+- Whether `--pose-source tf` actually works end-to-end on the robot (reading a live `map ->
+  base_link` transform through a full Set P run) is unverified; only the desk checks above ran.
+- The stationary localisation baseline is still not fully measured against the run 4 plan's
+  criterion: one of five Cartographer at-rest runs (2.6 cm) exceeded the 2 cm target, and AMCL's
+  divergence on this map means AMCL mode cannot currently supply this baseline at all.
+- Everything else listed as open in the 2026-10-21 entry below is unchanged by this commit.
+
+---
+
 ## 2026-10-21 — auto-mapping run 3 test report, the 5 cm tolerance tightened, a run 4 test plan written (A-005), a `nav_course.py` pause flag for it, and a rosbag recorder for 3D-twin camera walks
 
 ### What was built
