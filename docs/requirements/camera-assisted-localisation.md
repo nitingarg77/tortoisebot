@@ -1,6 +1,6 @@
 # Requirements: camera-assisted localisation
-Status: ready for owner scope approval (open-question defaults accepted 2026-10-27, see "Owner decisions")
-Owner approval: pending
+Status: scope approved; ready for /design (open-question defaults accepted 2026-10-27, see "Owner decisions")
+Owner approval: approved 2026-10-27 (Phase 1 offline spike; owner said "scope ok")
 
 ## Owner decisions (2026-10-27)
 
