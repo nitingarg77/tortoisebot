@@ -1,5 +1,5 @@
 # T-001: rigid-frame SLAM variant for goal runs (no global loop closure)
-Status: ready
+Status: in progress (desk part done; robot measurements not run)
 Type: job
 Feature: precision-5cm        Branch: feature/T-001-rigid-frame-slam
 Depends on: none (follows A-005, `docs/test-reports/run4-localisation-findings.md`)
@@ -19,8 +19,10 @@ There is no requirements document yet; these are this ticket's own criteria.
    a desk test pins that (every other line identical).
 2. The default launch is unchanged: with the variant not selected, Cartographer loads `slam_real.lua` as before.
 3. On the robot, with the variant selected and the robot untouched on the start cross for at least 10 minutes,
-   the logs contain no `constraint_builder_2d` "differs by" lines, and `map -> base_link` shows no step above
-   2 cm (report n, max step, spread).
+   `map -> base_link` shows no step above 2 cm (report n, max step, spread). Corrected 2026-10-27: the first
+   draft also required no `constraint_builder_2d` "differs by" lines. Upstream reads (see Approach 1) say the
+   constraint search still runs with the setting at 0, so those lines and their CPU cost are expected; what
+   changes is that they are not applied to `map -> odom`.
 4. Cross 10 (0, 0) is recorded after the robot has been moved around Set P, and again after a second pass;
    report each against the plan, n of at least 3 passes, mean and spread.
 5. Drift per metre: the robot is driven 1 m along x by a guarded script, 5 times, and the pose error against the
@@ -29,7 +31,11 @@ There is no requirements document yet; these are this ticket's own criteria.
 
 ## Files expected to change (max 2 source files + their tests)
 - `tortoisebot_slam/config/slam_real_rigid.lua` (new): a copy of `slam_real.lua` with one setting changed.
-- `tortoisebot_slam/launch/cartographer.launch.py`: a launch argument that selects the variant; default off.
+- `tortoisebot_slam/launch/cartographer.launch.py`: a launch argument `rigid_frame` that selects the variant;
+  default off. The selection is a ROS-free function `lua_for()` so it can be tested.
+- `tortoisebot_bringup/launch/autobringup.launch.py`: a `rigid_frame` argument passed through to the above,
+  because the stack is started from here. This is a third source file, beyond the "max 2" in the template;
+  without it the variant cannot be selected where the stack is launched.
 - Test: a new file under `tortoisebot_navigation/test/` or `tortoisebot_slam/test/` (whichever `run_tests.sh`
   collects; add the directory to `run_tests.sh` if needed) comparing the two `.lua` files line by line.
 
@@ -39,6 +45,12 @@ There is no requirements document yet; these are this ticket's own criteria.
    (`dpkg -l | grep cartographer`) and its source or docs at that version (CLAUDE.md section 1: the installed
    version, not the branch head), what turns global optimisation off. The expected setting is
    `POSE_GRAPH.optimize_every_n_nodes = 0`; do not assume it.
+   Done 2026-10-27 at the desk, partly: the 2.0.9004 tag could not be fetched, so this is upstream **master**
+   `pose_graph_2d.cc:397`: optimisation is dispatched only when `optimize_every_n_nodes() > 0` (other triggers
+   are finishing a trajectory and the final optimisation, neither during a run). The docs say "If positive,
+   will run the loop closure while the map is built". `ComputeConstraint` is still called at every node, so
+   constraint search continues. Installed version is 2.0.9004 on the box and the robot; the semantics at that
+   version are confirmed or refuted by criterion 3.
 2. Create `slam_real_rigid.lua` as a copy with only that setting changed, and a comment giving the reason and the
    source of the setting.
 3. In `cartographer.launch.py`, add a launch argument (name chosen to match the file's existing style, default

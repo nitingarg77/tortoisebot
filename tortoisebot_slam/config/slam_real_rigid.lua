@@ -1,0 +1,104 @@
+-- Copyright 2016 The Cartographer Authors
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--      http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+include "map_builder.lua"
+include "trajectory_builder.lua"
+
+options = {
+  map_builder = MAP_BUILDER,
+  trajectory_builder = TRAJECTORY_BUILDER,
+  map_frame = "map",
+  -- Stays base_link even with use_imu_data = true. Cartographer asserts the IMU
+  -- frame is colocated with tracking_frame (translation < 1e-5), and imu_link
+  -- sits 0.11 m above base_link -- but the IMU publishes its data labelled
+  -- base_link, so the assert is satisfied. That is sound rather than a dodge:
+  -- imu_joint is a pure z translation with no rotation and the robot rotates
+  -- about z, so orientation and angular velocity are frame-invariant here and
+  -- the lever-arm terms w x (w x r) and a x r are both exactly zero.
+  -- Setting tracking_frame = imu_link instead put z = -0.110 into the published
+  -- transform, which on hardware eats most of the global costmap voxel_layer's
+  -- origin_z headroom (the lidar would sit at 0.057 m rather than 0.167 m).
+  tracking_frame = "base_link",
+  published_frame = "base_link",
+  odom_frame = "odom",
+  provide_odom_frame = true,
+  publish_frame_projected_to_2d = true,
+  use_odometry = false,
+  use_nav_sat = false,
+  use_landmarks = false,
+  num_laser_scans = 1,
+  num_multi_echo_laser_scans = 0,
+  num_subdivisions_per_laser_scan = 1,
+  num_point_clouds = 0,
+  lookup_transform_timeout_sec = 0.2,
+  submap_publish_period_sec = 0.3,
+  -- 200 Hz, Cartographer's upstream default. 2e-2 (50 Hz) was tried on
+  -- 2026-09-30 as a fix for the controller_server TF freeze and did not
+  -- prevent it (1 of 2 launches froze at 50 Hz, 2 of 2 at 200 Hz; noise at
+  -- n=2), with no measurable difference in load either. Reverted so this
+  -- matches every earlier observation of the freeze. MODULE.md, "The TF-rate
+  -- A/B", has the runs and the reasoning.
+  pose_publish_period_sec = 5e-3,
+  trajectory_publish_period_sec = 30e-3,
+  rangefinder_sampling_ratio = 1.,
+  odometry_sampling_ratio = 1.,
+  fixed_frame_pose_sampling_ratio = 1.,
+  imu_sampling_ratio = 1.,
+  landmarks_sampling_ratio = 1.,
+}
+
+MAP_BUILDER.use_trajectory_builder_2d = true
+
+TRAJECTORY_BUILDER_2D.min_range = 0.05
+TRAJECTORY_BUILDER_2D.max_range = 8.
+TRAJECTORY_BUILDER_2D.missing_data_ray_length = 8.5
+-- The BNO055 is the only non-lidar sensor on the robot: differential.py is
+-- open-loop PWM with no encoders, so use_odometry stays false above and there is
+-- no wheel odometry to fall back on. Gravity alignment and gyro-based rotation
+-- extrapolation from the IMU are what keep scan matching stable while turning.
+TRAJECTORY_BUILDER_2D.use_imu_data = true
+TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = true
+-- 0.3 m, up from 0.1. With no wheel odometry the only motion prior is the
+-- extrapolator's velocity estimate, and on a loaded Pi 4 scans are processed
+-- late: at 0.15 m/s a scan more than ~0.7 s old had already left a 0.1 m
+-- window, the match failed, and the bad velocity it left behind ran
+-- odom->base_link away at constant speed to -559 m (2026-09-25 test).
+TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.3
+TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.translation_delta_cost_weight = 10.
+TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.rotation_delta_cost_weight = 1e-1
+-- Insert a scan only after 1 deg, 5 cm or 1 s of change, up from 0.2 deg alone.
+-- The old filter inserted nearly every scan (35 submaps in 5 min) and the
+-- extra nodes are what loaded the Pi once the robot started moving.
+TRAJECTORY_BUILDER_2D.motion_filter.max_angle_radians = math.rad(1.)
+TRAJECTORY_BUILDER_2D.motion_filter.max_distance_meters = 0.05
+TRAJECTORY_BUILDER_2D.motion_filter.max_time_seconds = 1.
+-- for current lidar only 1 is good value
+TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 1
+
+POSE_GRAPH.constraint_builder.min_score = 0.65
+POSE_GRAPH.constraint_builder.global_localization_min_score = 0.65
+POSE_GRAPH.optimization_problem.huber_scale = 1e2
+-- Global optimisation is the Pi's biggest CPU spike; run it less often now
+-- that the motion filter produces fewer nodes.
+-- RIGID FRAME VARIANT (T-001): the one change from slam_real.lua. 0 stops the
+-- periodic global optimisation (pose_graph_2d.cc: it only runs when this is
+-- positive), so loop closures are no longer applied to map->odom and the map
+-- frame stays where the start pose put it. Constraint search still runs, so
+-- the "differs by" log lines and their CPU cost remain. On 2026-10-27 the
+-- default config shifted map->odom by 0.41 m with the robot at rest.
+-- Semantics read from upstream master, not the installed 2.0.9004: verify by
+-- measurement on the robot.
+POSE_GRAPH.optimize_every_n_nodes = 0
+
+return options

@@ -46,6 +46,7 @@ def generate_launch_description():
     camera_port  = LaunchConfiguration('camera_port')
     use_camera   = LaunchConfiguration('camera')
     stack        = LaunchConfiguration('stack')
+    rigid_frame  = LaunchConfiguration('rigid_frame')
     use_rviz     = LaunchConfiguration('rviz')
     namespace     = LaunchConfiguration('namespace')
     use_namespace = LaunchConfiguration('use_namespace')
@@ -233,6 +234,7 @@ def generate_launch_description():
             ])),
             launch_arguments={
                 'use_sim_time': use_sim_time,
+                'rigid_frame': rigid_frame,
                 'is_odom_only': PythonExpression(["'false' if '", exploration, "' == 'true' or '", exploration, "' == 'True' else 'true'"]),
                 **ns_args,
             }.items()
@@ -371,6 +373,8 @@ def generate_launch_description():
                               description='True=frontier explorer drives off as soon as it starts, False=it waits for the RViz panel (exploration mode only)'),
         DeclareLaunchArgument('map_file',     default_value=default_map,
                               description='Path to saved map yaml (used when exploration=False)'),
+        DeclareLaunchArgument('rigid_frame',  default_value='False',
+                              description='True=real-robot SLAM without global loop closure (slam_real_rigid.lua, T-001); False=slam_real.lua'),
         DeclareLaunchArgument('stack',        default_value='all',
                               choices=['all', 'robot', 'compute'],
                               description='all=everything here, robot=drivers only, compute=SLAM, Nav2, explorer and watchdog only'),
