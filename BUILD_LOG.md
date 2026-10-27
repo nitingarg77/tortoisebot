@@ -55,6 +55,14 @@ experiment; nothing in config changed today.
 
 `./run_tests.sh`: 245 passed, unchanged — this commit added only the report.
 
+### Rigid-frame SLAM variant ticketed (`8c74a9f`)
+
+`docs/tasks/T-001-rigid-frame-slam.md` turns the "proposed as the next experiment" line above into a ticket:
+measure whether `map -> odom` stops jumping with Cartographer's global pose-graph optimisation off, and how much
+local drift remains. Measure-only — it does not claim 5 cm. Docs only, nothing touched the robot or `run_tests.sh`'s
+245. The setting that disables global optimisation is to be read from the installed Cartographer version rather
+than assumed (expected `POSE_GRAPH.optimize_every_n_nodes = 0`, per the ticket, pending that check).
+
 ### Open
 
 - Whether `--pose-source tf` works end-to-end is resolved in part: on the robot it supplied the pose for all 9
@@ -63,11 +71,11 @@ experiment; nothing in config changed today.
 - The stationary localisation baseline: SLAM-side spread (1.59-2.57 cm over 5 x 60 s, one of five runs over the
   2 cm target) stands as measured above. AMCL did not converge on a freshly hand-saved map (sd 0.20-0.55 m, one
   reading each) and so still cannot supply this baseline (`1dacc3d`).
-- **New today:** the SLAM `map` frame is not rigid even at rest — it jumped 0.41 m in y with the robot
-  untouched, tied to a Cartographer loop-closure constraint in the compute log (`1dacc3d`). This, not
-  `nav_course.py`, is the reason Set P has not run. Whether a backed-up pose-graph queue (114 items observed) is
-  the cause of the slow settling seen on some crosses is a hypothesis, not instrumented.
-- A rigid-frame SLAM variant (loop closure off for goal runs) is proposed as the next experiment; not started.
+- The SLAM `map` frame is not rigid even at rest — it jumped 0.41 m in y with the robot untouched, tied to a
+  Cartographer loop-closure constraint in the compute log (`1dacc3d`). This, not `nav_course.py`, is the reason
+  Set P has not run. Whether a backed-up pose-graph queue (114 items observed) is the cause of the slow settling
+  seen on some crosses is a hypothesis, not instrumented.
+- The rigid-frame SLAM variant proposed above is now ticketed as T-001 (`8c74a9f`); not started.
 - Everything else listed as open in the 2026-10-21 entry below is unchanged by this commit.
 
 ---
